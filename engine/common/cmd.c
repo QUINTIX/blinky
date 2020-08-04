@@ -121,7 +121,7 @@ Cbuf_AddText(const char *fmt, ...)
     buf = (char *)cmd_text.data + cmd_text.cursize;
     maxlen = cmd_text.maxsize - cmd_text.cursize;
     va_start(ap, fmt);
-    len = vsnprintf(buf, maxlen, fmt, ap);
+    len = qvsnprintf(buf, maxlen, fmt, ap);
     va_end(ap);
 
     if (cmd_text.cursize + len < cmd_text.maxsize)
@@ -311,24 +311,23 @@ Cmd_Exec_f
 void
 Cmd_Exec_f(void)
 {
-    char *f;
+    char *script;
     int mark;
 
     if (Cmd_Argc() != 2) {
 	Con_Printf("exec <filename> : execute a script file\n");
 	return;
     }
-    // FIXME: is this safe freeing the hunk here???
     mark = Hunk_LowMark();
-    f = COM_LoadHunkFile(Cmd_Argv(1));
-    if (!f) {
+    script = COM_LoadHunkFile(Cmd_Argv(1), NULL);
+    if (!script) {
 	Con_Printf("couldn't exec %s\n", Cmd_Argv(1));
 	return;
     }
     if (cl_warncmd.value || developer.value)
 	Con_Printf("execing %s\n", Cmd_Argv(1));
 
-    Cbuf_InsertText(f);
+    Cbuf_InsertText(script);
     Hunk_FreeToLowMark(mark);
 }
 
@@ -378,7 +377,6 @@ Cmd_Alias_f(void)
     char cmd[1024];
     int i, c;
     const char *s;
-    char *newval;
     size_t cmd_len;
     struct stree_node *node;
 
@@ -428,9 +426,7 @@ Cmd_Alias_f(void)
     }
     strcat(cmd, "\n");
 
-    newval = Z_Malloc(strlen(cmd) + 1);
-    strcpy(newval, cmd);
-    a->value = newval;
+    a->value = Z_StrDup(cmd);
 }
 
 /*
@@ -531,7 +527,6 @@ void
 Cmd_TokenizeString(const char *text)
 {
     int i;
-    char *arg;
 
 // clear the args from the last string
     for (i = 0; i < cmd_argc; i++)
@@ -562,9 +557,7 @@ Cmd_TokenizeString(const char *text)
 	    return;
 
 	if (cmd_argc < MAX_ARGS) {
-	    arg = Z_Malloc(strlen(com_token) + 1);
-	    strcpy(arg, com_token);
-	    cmd_argv[cmd_argc] = arg;
+	    cmd_argv[cmd_argc] = Z_StrDup(com_token);
 	    cmd_argc++;
 	}
     }
@@ -608,7 +601,7 @@ Cmd_AddCommand(const char *cmd_name, xcommand_t function)
 	return;
     }
 
-    cmd = Hunk_Alloc(sizeof(cmd_function_t));
+    cmd = Hunk_AllocName(sizeof(cmd_function_t), "commands");
     cmd->name = cmd_name;
     cmd->function = function;
     cmd->completion = NULL;

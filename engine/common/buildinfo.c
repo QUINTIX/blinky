@@ -18,22 +18,26 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-#include "SDL.h"
+#include <time.h>
 
-extern SDL_Window *sdl_window;
-extern SDL_PixelFormat *sdl_desktop_format;
+#include "common.h"
 
-typedef struct {
-    typeof(SDL_PIXELFORMAT_UNKNOWN) format;
-} qvidformat_t;
+const char *build_version = stringify(TYR_VERSION);
+const int64_t build_version_timestamp = TYR_VERSION_TIME;
 
-/*
- * Independent subsystems can call this to ensure the main SDL_Init()
- * has been called at least once before they init their subsystem
- * via SDL_InitSubSystem(SDL_INIT_FOO)
- */
-void Q_SDL_InitOnce();
+const char *
+Build_DateString()
+{
+    static char buffer[26];
+    time_t timestamp = build_version_timestamp;
+    struct tm gmtimestamp;
 
-void VID_SDL_SetIcon();
-void VID_SDL_InitModeList();
-void IN_SDL_HandleEvent(SDL_Event *event);
+#ifdef _WIN32
+    gmtime_s(&gmtimestamp, &timestamp);
+#else
+    gmtime_r(&timestamp, &gmtimestamp);
+#endif
+    strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &gmtimestamp);
+
+    return buffer;
+}

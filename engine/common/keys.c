@@ -162,7 +162,7 @@ static const keyname_t keynames[] = {
     {NULL, 0}
 };
 
-static cvar_t in_cfg_unbindall = { "in_cfg_unbindall", "1", true };
+static cvar_t in_cfg_unbindall = { "in_cfg_unbindall", "1", CVAR_CONFIG };
 
 /*
 ==============================================================================
@@ -240,9 +240,7 @@ CompleteCommand(void)
 	cmd = strchr(s, ' ');
 	if (cmd) {
 	    len = cmd - s;
-	    newcmd = Z_Malloc(len + 1);
-	    strncpy(newcmd, s, len);
-	    newcmd[len] = 0;
+	    newcmd = Z_StrnDup(s, len);
 
 	    completion = NULL;
 	    if (Cmd_Exists(newcmd)) {
@@ -286,9 +284,7 @@ ShowCompletions(void)
 	char *cmd = strchr(s, ' ');
 	if (cmd) {
 	    len = cmd - s;
-	    cmd = Z_Malloc(len + 1);
-	    strncpy(cmd, s, len);
-	    cmd[len] = 0;
+	    cmd = Z_StrnDup(s, len);
 
 	    if (Cmd_Exists(cmd)) {
 		struct stree_root *root;
@@ -401,7 +397,7 @@ Key_Console(knum_t key)
 	} while (history_line != edit_line && !key_lines[history_line][1]);
 	if (history_line == edit_line)
 	    history_line = (edit_line + 1) & 31;
-	strcpy(key_lines[edit_line], key_lines[history_line]);
+	qstrncpy(key_lines[edit_line], key_lines[history_line], sizeof(key_lines[edit_line]));
 	key_linepos = strlen(key_lines[edit_line]);
 	return;
     }
@@ -417,7 +413,7 @@ Key_Console(knum_t key)
 	    key_lines[edit_line][0] = ']';
 	    key_linepos = 1;
 	} else {
-	    strcpy(key_lines[edit_line], key_lines[history_line]);
+	    qstrncpy(key_lines[edit_line], key_lines[history_line], sizeof(key_lines[edit_line]));
 	    key_linepos = strlen(key_lines[edit_line]);
 	}
 	return;
@@ -600,8 +596,6 @@ Key_SetBinding
 void
 Key_SetBinding(knum_t keynum, const char *binding)
 {
-    char *newbinding;
-
     if (keynum == K_UNKNOWN)
 	return;
 
@@ -611,11 +605,9 @@ Key_SetBinding(knum_t keynum, const char *binding)
 	keybindings[keynum] = NULL;
     }
 
+    /* allocate memory for new binding */
     if (binding) {
-	/* allocate memory for new binding */
-	newbinding = Z_Malloc(strlen(binding) + 1);
-	strcpy(newbinding, binding);
-	keybindings[keynum] = newbinding;
+	keybindings[keynum] = Z_StrDup(binding);
     }
 }
 
@@ -946,6 +938,18 @@ Key_Event(knum_t key, qboolean down)
     default:
 	Sys_Error("Bad key_dest");
     }
+}
+
+void
+Key_ClearAllStates(void)
+{
+    knum_t keynum;
+
+    /* send an up event for each key, to ensure the server clears them all */
+    for (keynum = K_UNKNOWN; keynum < K_LAST; keynum++)
+	Key_Event(keynum, false);
+
+    Key_ClearStates();
 }
 
 /*

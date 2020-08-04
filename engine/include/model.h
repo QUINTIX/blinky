@@ -50,6 +50,24 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "bothdefs.h"
 #endif
 
+typedef enum {
+    depthchain_head,
+    depthchain_alias,
+    depthchain_sprite,
+    depthchain_bmodel_static,
+    depthchain_bmodel_transformed,
+    depthchain_bmodel_instanced,
+} depthchain_type_t;
+
+struct entity_s;
+typedef struct depthchain_s {
+    int key;                 // depth base key for sorting (depth value squared)
+    depthchain_type_t type;  // different entry types that require different rendering calls
+    byte alpha;              // alpha value for the surface
+    struct entity_s *entity; // pointer back to the entity for surface transform
+    struct depthchain_s *prev, *next; // TODO: this can probably be a singley linked list?
+} depthchain_t;
+
 /*
 
 d*_t structures are on-disk representations
@@ -58,14 +76,14 @@ m*_t structures are in-memory
 */
 
 // entity effects
-#define EF_BRIGHTFIELD	1
-#define EF_MUZZLEFLASH 	2
-#define EF_BRIGHTLIGHT 	4
-#define EF_DIMLIGHT 	8
-#define EF_FLAG1	16
-#define EF_FLAG2	32
-#define EF_BLUE		64
-#define EF_RED		128
+#define ENT_EF_BRIGHTFIELD (1 << 0)
+#define ENT_EF_MUZZLEFLASH (1 << 1)
+#define ENT_EF_BRIGHTLIGHT (1 << 2)
+#define ENT_EF_DIMLIGHT    (1 << 3)
+#define ENT_EF_FLAG1       (1 << 4)
+#define ENT_EF_FLAG2       (1 << 5)
+#define ENT_EF_BLUE        (1 << 6)
+#define ENT_EF_RED         (1 << 7)
 
 /*
 ==============================================================================
@@ -85,27 +103,46 @@ typedef struct {
 } mvertex_t;
 
 typedef struct texture_s {
-    char name[16];
+    unsigned texturenum;
     unsigned width, height;
 #ifdef GLQUAKE
+    int mark;
     GLuint gl_texturenum;
-    GLuint gl_texturenum_alpha;	// for sky texture
-    struct msurface_s *texturechain;
+    union {
+    	GLuint gl_texturenum_alpha;	 // for sky texture
+    	GLuint gl_texturenum_fullbright; // mask texture for fullbrights
+    	struct {
+    		GLuint gl_warpimage;
+    		int gl_warpimagesize;
+    	};
+    };
 #endif
-    int anim_total;		// total tenths in sequence ( 0 = no)
-    int anim_min, anim_max;	// time for this frame min <=time< max
-    struct texture_s *anim_next;	// in the animation sequence
-    struct texture_s *alternate_anims;	// bmodels in frmae 1 use these
-    unsigned offsets[MIPLEVELS];	// four mip maps stored
+    // Texture frames animate a 5 frames-per-second
+    // So, a frame 'tick' is 0.2 seconds
+    int anim_total;		        // total ticks in sequence (0 = no animation)
+    int anim_min, anim_max;	        // ticks for this frame min <= tick < max
+    struct texture_s *anim_next;        // next frame in the animation sequence
+    struct texture_s *alternate_anims;  // bmodels in frame 1 use these
+    unsigned offsets[MIPLEVELS];        // four mip maps stored
+    char name[16];
 } texture_t;
 
+// If these SURF_* flags change, update in asm_draw.h also
+#define SURF_PLANEBACK          (1 <<  1)
+#define SURF_DRAWSKY            (1 <<  2)
+#define SURF_DRAWSPRITE         (1 <<  3)
+#define SURF_DRAWTURB           (1 <<  4)
+#define SURF_DRAWTILED          (1 <<  5)
+#define SURF_DRAWBACKGROUND     (1 <<  6)
+#define SURF_DRAWFENCE          (1 <<  7)
 
-#define	SURF_PLANEBACK		(1 << 1)
-#define	SURF_DRAWSKY		(1 << 2)
-#define SURF_DRAWSPRITE		(1 << 3)
-#define SURF_DRAWTURB		(1 << 4)
-#define SURF_DRAWTILED		(1 << 5)
-#define SURF_DRAWBACKGROUND	(1 << 6)
+/* Flag different types for independent alpha values */
+#define SURF_DRAWWATER		(1 <<  8)
+#define SURF_DRAWSLIME		(1 <<  9)
+#define SURF_DRAWLAVA		(1 << 10)
+#define SURF_DRAWTELE		(1 << 11)
+#define SURF_DRAWENTALPHA	(1 << 12)
+//not in tyr. Remove?
 #ifdef GLQUAKE
 #define SURF_UNDERWATER		(1 << 7)
 #define SURF_DONTWARP		(1 << 8)
@@ -127,8 +164,8 @@ typedef struct {
 #ifdef GLQUAKE
 #define	VERTEXSIZE	7
 typedef struct glpoly_s {
-    struct glpoly_s *next;
-    struct glpoly_s *chain;
+    struct glpoly_s *next; //not in tyr
+    struct glpoly_s *chain; //not in tyr
     int numverts;
     int flags;			// for SURF_UNDERWATER
     float verts[0][VERTEXSIZE];	// variable sized (xyz s1t1 s2t2)
@@ -147,7 +184,7 @@ typedef struct msurface_s {
     int firstedge;	// look up in model->surfedges[], negative numbers
     int numedges;	// are backwards edges
 
-#ifdef GLQUAKE
+#ifdef GLQUAKE //glquake is basically broken. Leave alone in first merge
     int light_s;	// gl lightmap coordinates
     int light_t;
     int lightmaptexturenum;
@@ -173,11 +210,23 @@ typedef struct msurface_s {
     byte *samples;		// [numstyles*surfsize]
 } msurface_t;
 
+void DepthChain_AddEntity(depthchain_t *head, struct entity_s *entity, depthchain_type_t type);
+void DepthChain_Init(depthchain_t *head); // Init the empty depthchain
+
+#ifdef GLQUAKE
+static inline msurface_t *
+DepthChain_Surf(depthchain_t *entry)
+{
+    return container_of(entry, msurface_t, depthchain);
+}
+void DepthChain_AddSurf(depthchain_t *head, struct entity_s *entity, msurface_t *surf, depthchain_type_t type);
+#endif
+
 /*
  * foreach_surf_lightstyle()
  *   Iterator for lightmaps on a surface
  *     msurface_t *s => the surface
- *     int n         => lightmap number
+ *      int n		 => lightmap number
  */
 #define foreach_surf_lightstyle(s, n) \
 	for ((n) = 0; (n) < MAXLIGHTMAPS && (s)->styles[n] != 255; (n)++)
@@ -340,8 +389,16 @@ typedef struct {
 #ifdef GLQUAKE
 
 typedef struct {
-    int commands;	// gl command list with embedded s/t
-    int textures;	/* Offset to GLuint texture names */
+    float s;
+    float t;
+} texcoord_t;
+
+typedef struct {
+    uint16_t texturewidth;   // Actual texture width after uploading
+    uint16_t textureheight;  //  (may be scaled up to power-of-two boundary)
+    int indices;             // Offset to indices for drawing
+    int texcoords;           // Offset to texcoords
+    int textures;            // Offset to GLuint texture handles
     aliashdr_t ahdr;
 } gl_aliashdr_t;
 
@@ -379,14 +436,14 @@ SW_Aliashdr(aliashdr_t *h)
 
 typedef enum { mod_brush, mod_sprite, mod_alias } modtype_t;
 
-#define	EF_ROCKET	1	// leave a trail
-#define	EF_GRENADE	2	// leave a trail
-#define	EF_GIB		4	// leave a trail
-#define	EF_ROTATE	8	// rotate (bonus items)
-#define	EF_TRACER	16	// green split trail
-#define	EF_ZOMGIB	32	// small blood trail
-#define	EF_TRACER2	64	// orange split trail + rotate
-#define	EF_TRACER3	128	// purple trail
+#define MOD_EF_ROCKET   (1 << 0) // leave a trail
+#define MOD_EF_GRENADE  (1 << 1) // leave a trail
+#define MOD_EF_GIB      (1 << 2) // leave a trail
+#define MOD_EF_ROTATE   (1 << 3) // rotate (bonus items)
+#define MOD_EF_TRACER   (1 << 4) // green split trail
+#define MOD_EF_ZOMGIB   (1 << 5) // small blood trail
+#define MOD_EF_TRACER2  (1 << 6) // orange split trail + rotate
+#define MOD_EF_TRACER3  (1 << 7) // purple trail
 
 typedef struct model_s {
     char name[MAX_QPATH];
@@ -401,9 +458,11 @@ typedef struct model_s {
 //
 // volume occupied by the model graphics
 //
-    vec3_t mins, maxs;
-    float radius;
+    vec3_t mins, maxs; // Unrotated bounding box
+    float xy_radius;   // Bounding radius in the xy plane (zero pitch/roll)
+    float radius;      // Bounding radius under arbitrary rotation
 
+    depthchain_t depthchain;  // For depth sorting translucent sprite/alias models
 //
 // additional model data
 //
@@ -416,6 +475,7 @@ typedef struct model_s {
  */
 typedef struct brushmodel_s {
     struct brushmodel_s *next;
+    struct brushmodel_s *parent; // Submodels have the world as a parent model
     model_t model;
 
     int firstmodelsurface;
@@ -483,6 +543,16 @@ BrushModel(model_t *model)
     return container_of(model, brushmodel_t, model);
 }
 
+/* Brush model loader structures */
+typedef struct brush_loader {
+    int (*Padding)(void);
+    void (*LoadLighting)(brushmodel_t *brushmodel, dheader_t *header);
+    void (*PostProcess)(brushmodel_t *brushmodel);
+
+    // Number of bytes per sample in the loaded lightmap data
+    int lightmap_sample_bytes;
+} brush_loader_t;
+
 /* Alias model loader structures */
 typedef struct {
     mtriangle_t *triangles;
@@ -499,17 +569,17 @@ typedef struct {
     byte **data;
 } alias_skindata_t;
 
-typedef struct model_loader {
-    int (*Aliashdr_Padding)(void);
+typedef struct alias_loader {
+    int (*Padding)(void);
     void (*LoadSkinData)(model_t *, aliashdr_t *, const alias_skindata_t *);
     void (*LoadMeshData)(const model_t *, aliashdr_t *hdr,
 			 const alias_meshdata_t *, const alias_posedata_t *);
     void (*CacheDestructor)(cache_user_t *);
-} model_loader_t;
+} alias_loader_t;
 
 //============================================================================
 
-void Mod_Init(const model_loader_t *loader);
+void Mod_Init(const alias_loader_t *alias_loader, const brush_loader_t *brush_loader);
 void *Mod_AllocName(int size, const char *name); /* Internal helper */
 #ifndef SERVERONLY
 void Mod_InitAliasCache(void);
@@ -524,6 +594,13 @@ model_t *Mod_ForName(const char *name, qboolean crash);
 void *Mod_Extradata(model_t *model);	// handles caching
 void Mod_TouchModel(const char *name);
 void Mod_Print(void);
+
+#ifdef GLQUAKE
+void GL_LoadSpriteTextures(const model_t *model);
+void Mod_ReloadTextures();
+#endif
+
+extern brushmodel_t *loaded_brushmodels;
 
 /*
  * PVS/PHS information
@@ -597,11 +674,11 @@ void Mod_AddLeafBits(leafbits_t *dst, const leafbits_t *src);
 int Mod_CountLeafBits(const leafbits_t *leafbits);
 #endif
 
-// FIXME - surely this doesn't belong here?
-texture_t *R_TextureAnimation(const struct entity_s *e, texture_t *base);
+/* Helper to just copy out unprocessed data from the lump */
+void *Mod_LoadBytes(brushmodel_t *brushmodel, dheader_t *header, int lumpnum);
 
-void Mod_LoadAliasModel(const model_loader_t *loader, model_t *model,
-			void *buffer);
+void Mod_LoadAliasModel(const alias_loader_t *loader, model_t *model,
+			void *buffer, size_t buffersize);
 void Mod_LoadSpriteModel(model_t *model, const void *buffer);
 
 const mspriteframe_t *Mod_GetSpriteFrame(const struct entity_s *entity,

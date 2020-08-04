@@ -205,7 +205,7 @@ Sys_Error(const char *error, ...)
     va_end(argptr);
 
     if (isDedicated) {
-	snprintf(text2, sizeof(text2), "ERROR: %s\n", text);
+	qsnprintf(text2, sizeof(text2), "ERROR: %s\n", text);
 	if (text2[sizeof(text2) - 2])
 	    strcpy(text2 + sizeof(text2) - 2, "\n"); /* in case we truncated */
 	WriteFile(houtput, text5, strlen(text5), &dummy, NULL);

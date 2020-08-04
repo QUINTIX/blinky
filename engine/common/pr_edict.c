@@ -50,8 +50,17 @@ globalvars_t *pr_global_struct;
 float *pr_globals;		// same as pr_global_struct
 int pr_edict_size;		// in bytes
 
+qboolean pr_alpha_supported;
+
 static ddef_t *pr_fielddefs;
 static ddef_t *pr_globaldefs;
+
+/* Suppress the "is not a field" warnings for these keys if they are missing from defs.qc */
+static const char *suppress_warning_keys[] = {
+    "sky",
+    "fog",
+    "alpha",
+};
 
 /*
  * These are the sizes of the types enumerated in etype_t (pr_comp.h)
@@ -87,11 +96,11 @@ static cvar_t scratch1 = { "scratch1", "0" };
 static cvar_t scratch2 = { "scratch2", "0" };
 static cvar_t scratch3 = { "scratch3", "0" };
 static cvar_t scratch4 = { "scratch4", "0" };
-static cvar_t savedgamecfg = { "savedgamecfg", "0", true };
-static cvar_t saved1 = { "saved1", "0", true };
-static cvar_t saved2 = { "saved2", "0", true };
-static cvar_t saved3 = { "saved3", "0", true };
-static cvar_t saved4 = { "saved4", "0", true };
+static cvar_t savedgamecfg = { "savedgamecfg", "0", CVAR_CONFIG };
+static cvar_t saved1 = { "saved1", "0", CVAR_CONFIG };
+static cvar_t saved2 = { "saved2", "0", CVAR_CONFIG };
+static cvar_t saved3 = { "saved3", "0", CVAR_CONFIG };
+static cvar_t saved4 = { "saved4", "0", CVAR_CONFIG };
 #endif
 #if defined(QW_HACK) && defined(SERVERONLY)
 func_t SpectatorConnect;
@@ -190,6 +199,7 @@ ED_Free(edict_t *ed)
     VectorCopy(vec3_origin, ed->v.angles);
     ed->v.nextthink = -1;
     ed->v.solid = 0;
+    ed->alpha = ENTALPHA_DEFAULT;
 
     ed->freetime = sv.time;
 }
@@ -340,35 +350,35 @@ PR_ValueString(etype_t type, eval_t *val)
 
     switch (type) {
     case ev_string:
-	snprintf(line, sizeof(line), "%s", PR_GetString(val->string));
+	qsnprintf(line, sizeof(line), "%s", PR_GetString(val->string));
 	break;
     case ev_entity:
-	snprintf(line, sizeof(line), "entity %i",
+	qsnprintf(line, sizeof(line), "entity %i",
 		 NUM_FOR_EDICT(PROG_TO_EDICT(val->edict)));
 	break;
     case ev_function:
 	f = pr_functions + val->function;
-	snprintf(line, sizeof(line), "%s()", PR_GetString(f->s_name));
+	qsnprintf(line, sizeof(line), "%s()", PR_GetString(f->s_name));
 	break;
     case ev_field:
 	def = ED_FieldAtOfs(val->_int);
-	snprintf(line, sizeof(line), ".%s", PR_GetString(def->s_name));
+	qsnprintf(line, sizeof(line), ".%s", PR_GetString(def->s_name));
 	break;
     case ev_void:
-	snprintf(line, sizeof(line), "void");
+	qsnprintf(line, sizeof(line), "void");
 	break;
     case ev_float:
-	snprintf(line, sizeof(line), "%5.1f", val->_float);
+	qsnprintf(line, sizeof(line), "%5.1f", val->_float);
 	break;
     case ev_vector:
-	snprintf(line, sizeof(line), "'%5.1f %5.1f %5.1f'",
-		 val->vector[0], val->vector[1], val->vector[2]);
+	qsnprintf(line, sizeof(line), "'%5.1f %5.1f %5.1f'",
+		  val->vector[0], val->vector[1], val->vector[2]);
 	break;
     case ev_pointer:
-	snprintf(line, sizeof(line), "pointer");
+	qsnprintf(line, sizeof(line), "pointer");
 	break;
     default:
-	snprintf(line, sizeof(line), "bad type %i", type);
+	qsnprintf(line, sizeof(line), "bad type %i", type);
 	break;
     }
 
@@ -394,32 +404,32 @@ PR_UglyValueString(etype_t type, eval_t *val)
 
     switch (type) {
     case ev_string:
-	snprintf(line, sizeof(line), "%s", PR_GetString(val->string));
+	qsnprintf(line, sizeof(line), "%s", PR_GetString(val->string));
 	break;
     case ev_entity:
-	snprintf(line, sizeof(line), "%i",
-		 NUM_FOR_EDICT(PROG_TO_EDICT(val->edict)));
+	qsnprintf(line, sizeof(line), "%i",
+		  NUM_FOR_EDICT(PROG_TO_EDICT(val->edict)));
 	break;
     case ev_function:
 	f = pr_functions + val->function;
-	snprintf(line, sizeof(line), "%s", PR_GetString(f->s_name));
+	qsnprintf(line, sizeof(line), "%s", PR_GetString(f->s_name));
 	break;
     case ev_field:
 	def = ED_FieldAtOfs(val->_int);
-	snprintf(line, sizeof(line), "%s", PR_GetString(def->s_name));
+	qsnprintf(line, sizeof(line), "%s", PR_GetString(def->s_name));
 	break;
     case ev_void:
-	snprintf(line, sizeof(line), "void");
+	qsnprintf(line, sizeof(line), "void");
 	break;
     case ev_float:
-	snprintf(line, sizeof(line), "%f", val->_float);
+	qsnprintf(line, sizeof(line), "%f", val->_float);
 	break;
     case ev_vector:
-	snprintf(line, sizeof(line), "%f %f %f",
-		 val->vector[0], val->vector[1], val->vector[2]);
+	qsnprintf(line, sizeof(line), "%f %f %f",
+		  val->vector[0], val->vector[1], val->vector[2]);
 	break;
     default:
-	snprintf(line, sizeof(line), "bad type %i", type);
+	qsnprintf(line, sizeof(line), "bad type %i", type);
 	break;
     }
 
@@ -446,11 +456,11 @@ PR_GlobalString(int ofs)
     val = (void *)&pr_globals[ofs];
     def = ED_GlobalAtOfs(ofs);
     if (!def)
-	snprintf(line, sizeof(line), "%i(???"")", ofs);
+	qsnprintf(line, sizeof(line), "%i(???"")", ofs);
     else {
 	s = PR_ValueString(def->type, val);
-	snprintf(line, sizeof(line), "%i(%s)%s", ofs,
-		 PR_GetString(def->s_name), s);
+	qsnprintf(line, sizeof(line), "%i(%s)%s", ofs,
+		  PR_GetString(def->s_name), s);
     }
 
     for (i = strlen(line); i < 20; i++)
@@ -469,9 +479,9 @@ PR_GlobalStringNoContents(int ofs)
 
     def = ED_GlobalAtOfs(ofs);
     if (!def)
-	snprintf(line, sizeof(line), "%i(???"")", ofs);
+	qsnprintf(line, sizeof(line), "%i(???"")", ofs);
     else
-	snprintf(line, sizeof(line), "%i(%s)", ofs, PR_GetString(def->s_name));
+	qsnprintf(line, sizeof(line), "%i(%s)", ofs, PR_GetString(def->s_name));
 
     i = strlen(line);
     for (; i < 20; i++)
@@ -573,6 +583,10 @@ ED_Write(FILE *f, edict_t *ed)
 	fprintf(f, "\"%s\" ", name);
 	fprintf(f, "\"%s\"\n", PR_UglyValueString(d->type, (eval_t *)v));
     }
+
+    // Save entity alpha manually when progs.dat doesn't support alpha
+    if (!pr_alpha_supported && ed->alpha != ENTALPHA_DEFAULT)
+        fprintf(f, "\"alpha\" \"%f\"\n", ENTALPHA_TOSAVE(ed->alpha));
 
     fprintf(f, "}\n");
 }
@@ -753,21 +767,18 @@ static char *
 ED_NewString(const char *string)
 {
     char *new, *new_p;
-    int i, l;
+    int i, length;
 
-    l = strlen(string) + 1;
-    new = Hunk_Alloc(l);
-    new_p = new;
+    length = strlen(string) + 1;
+    new_p = new = Hunk_AllocName(length, "progstr");
 
-    for (i = 0; i < l; i++) {
-	if (string[i] == '\\' && i < l - 1) {
+    for (i = 0; i < length; i++) {
+	if (string[i] == '\\' && i < length - 1) {
 	    i++;
-	    if (string[i] == 'n')
-		*new_p++ = '\n';
-	    else
-		*new_p++ = '\\';
-	} else
+            *new_p++ = (string[i] == 'n') ? '\n' : '\\';
+	} else {
 	    *new_p++ = string[i];
+        }
     }
 
     return new;
@@ -895,7 +906,7 @@ ED_ParseEdict(const char *data, edict_t *ent)
 	} else {
 	    keysource = com_token;
 	}
-	snprintf(keyname, sizeof(keyname), "%s", keysource);
+	qsnprintf(keyname, sizeof(keyname), "%s", keysource);
 
 	/* another hack to fix keynames with trailing spaces */
 	n = strlen(keyname);
@@ -917,15 +928,24 @@ ED_ParseEdict(const char *data, edict_t *ent)
 	if (keyname[0] == '_')
 	    continue;
 
+        // hack to support .alpha when progs.dat doesn't support it
+        if (!strcmp(keyname, "alpha"))
+            ent->alpha = ENTALPHA_ENCODE(atof(com_token));
+
 	key = ED_FindField(keyname);
 	if (!key) {
-	    Con_Printf("'%s' is not a field\n", keyname);
+            for (n = 0; n < ARRAY_SIZE(suppress_warning_keys); n++) {
+                if (!strcmp(keyname, suppress_warning_keys[n]))
+                    break;
+            }
+            if (n == ARRAY_SIZE(suppress_warning_keys))
+                Con_Printf("'%s' is not a field\n", keyname);
 	    continue;
 	}
 
 	if (anglehack) {
 	    char temp[32];
-	    snprintf(temp, sizeof(temp), "0 %s 0", com_token);
+	    qsnprintf(temp, sizeof(temp), "0 %s 0", com_token);
 	    ok = ED_ParseEpair((void *)&ent->v, key, temp);
 	} else {
 	    ok = ED_ParseEpair((void *)&ent->v, key, com_token);
@@ -1049,6 +1069,8 @@ void
 PR_LoadProgs(void)
 {
     int i;
+    size_t progs_size;
+
 #if defined(QW_HACK) && defined(SERVERONLY)
     char num[32];
     dfunction_t *f;
@@ -1059,23 +1081,23 @@ PR_LoadProgs(void)
 	gefvCache[i].field[0] = 0;
 
 #ifdef NQ_HACK
-    progs = COM_LoadHunkFile("progs.dat");
+    progs = COM_LoadHunkFile("progs.dat", &progs_size);
 #endif
 #if defined(QW_HACK) && defined(SERVERONLY)
-    progs = COM_LoadHunkFile("qwprogs.dat");
+    progs = COM_LoadHunkFile("qwprogs.dat", &progs_size);
     if (!progs)
-	progs = COM_LoadHunkFile("progs.dat");
+	progs = COM_LoadHunkFile("progs.dat", &progs_size);
 #endif
     if (!progs)
 	SV_Error("%s: couldn't load progs.dat", __func__);
-    Con_DPrintf("Programs occupy %iK.\n", com_filesize / 1024);
+    Con_DPrintf("Programs occupy %iK.\n", (int)(progs_size / 1024));
 
 #ifdef NQ_HACK
-    pr_crc = CRC_Block((byte *)progs, com_filesize);
+    pr_crc = CRC_Block((byte *)progs, progs_size);
 #endif
 #if defined(QW_HACK) && defined(SERVERONLY)
 // add prog crc to the serverinfo
-    sprintf(num, "%i", CRC_Block((byte *)progs, com_filesize));
+    qsnprintf(num, sizeof(num), "%i", CRC_Block((byte *)progs, progs_size));
     Info_SetValueForStarKey(svs.info, "*progs", num, MAX_SERVERINFO_STRING);
 #endif
 
@@ -1098,7 +1120,7 @@ PR_LoadProgs(void)
     pr_functions = (dfunction_t *)((byte *)progs + progs->ofs_functions);
     pr_strings = (char *)progs + progs->ofs_strings;
     pr_strings_size = progs->strings_size;
-    if (progs->ofs_strings + pr_strings_size >= com_filesize)
+    if (progs->ofs_strings + pr_strings_size >= progs_size)
 #ifdef NQ_HACK
 	Host_Error("progs.dat strings extend past end of file\n");
 #endif
@@ -1141,12 +1163,17 @@ PR_LoadProgs(void)
 	pr_globaldefs[i].s_name = LittleLong(pr_globaldefs[i].s_name);
     }
 
+    pr_alpha_supported = false;
     for (i = 0; i < progs->numfielddefs; i++) {
 	pr_fielddefs[i].type = LittleShort(pr_fielddefs[i].type);
 	if (pr_fielddefs[i].type & DEF_SAVEGLOBAL)
 	    SV_Error("%s: pr_fielddefs[i].type & DEF_SAVEGLOBAL", __func__);
 	pr_fielddefs[i].ofs = LittleShort(pr_fielddefs[i].ofs);
 	pr_fielddefs[i].s_name = LittleLong(pr_fielddefs[i].s_name);
+
+        /* Detect alpha support in progs.dat */
+        if (!strcmp(pr_strings + pr_fielddefs[i].s_name, "alpha"))
+            pr_alpha_supported = true;
     }
 
     for (i = 0; i < progs->numglobals; i++)
@@ -1163,6 +1190,12 @@ PR_LoadProgs(void)
     if ((f = ED_FindFunction("SpectatorDisconnect")) != NULL)
 	SpectatorDisconnect = (func_t)(f - pr_functions);
 #endif
+
+    // round off to next highest whole word address (esp for Alpha)
+    // this ensures that pointers in the engine data area are always
+    // properly aligned
+    pr_edict_size += sizeof(void *) - 1;
+    pr_edict_size &= ~(sizeof(void *) - 1);
 }
 
 

@@ -34,8 +34,8 @@ typedef struct memblock_s {
     int size;		/* including the header and possibly tiny fragments */
     int tag;		/* a tag of 0 is a free block */
     int id;		/* should be ZONEID */
-    struct memblock_s *next, *prev;
     int pad;		/* pad to 64 bit boundary */
+    struct memblock_s *next, *prev;
 } memblock_t;
 
 typedef struct {
@@ -135,6 +135,14 @@ Z_Free(const void *ptr)
 	if (other == mainzone->rover)
 	    mainzone->rover = block;
     }
+
+    /*
+     * Always start looking from the first available free block.
+     * Slower, but not too bad and we don't fragment nearly as much.
+     */
+    if (block < mainzone->rover) {
+	mainzone->rover = block;
+    }
 }
 
 
@@ -182,9 +190,13 @@ Z_TagMalloc(int size, int tag)
     size += sizeof(int);	/* space for memory trash tester */
     size = (size + 7) & ~7;	/* align to 8-byte boundary */
 
-    base = rover = mainzone->rover;
-    start = base->prev;
+    /* If we ended on an allocated block, skip forward to the first free block */
+    start = mainzone->rover->prev;
+    while (mainzone->rover->tag && mainzone->rover != start) {
+	mainzone->rover = mainzone->rover->next;
+    }
 
+    base = rover = mainzone->rover;
     do {
 	if (rover == start)	/* scaned all the way around the list */
 	    return NULL;
@@ -194,9 +206,7 @@ Z_TagMalloc(int size, int tag)
 	    rover = rover->next;
     } while (base->tag || base->size < size);
 
-    /*
-     * found a block big enough
-     */
+    /* found a block big enough */
     extra = base->size - size;
     if (extra > MINFRAGMENT) {
 	/* there will be a free fragment after the allocated block */
@@ -212,7 +222,14 @@ Z_TagMalloc(int size, int tag)
     }
 
     base->tag = tag;		   /* no longer a free block */
-    mainzone->rover = base->next;  /* next allocation starts looking here */
+
+    /*
+     * If we just allocated the first available block, the next
+     * allocation starts looking after this one.
+     */
+    if (base == mainzone->rover) {
+	mainzone->rover = base->next;
+    }
 
     base->id = ZONEID;
 
@@ -293,9 +310,11 @@ Z_Print(const memzone_t *zone, qboolean detailed)
 
     block = zone->blocklist.next;
     while (block) {
-	if (detailed)
-	    Con_Printf("block:%p    size:%7i    tag:%3i\n",
-		       block, block->size, block->tag);
+	if (detailed) {
+	    const char *rover = (block == zone->rover) ? " <<" : "";
+	    Con_Printf("block:%p    size:%7i    tag:%3i %s\n",
+		       block, block->size, block->tag, rover);
+	}
 
 	/* Update totals */
 	if (!block->tag) {
@@ -339,6 +358,24 @@ Z_Zone_f(void)
 	}
     }
     Con_Printf("Usage: zone print\n");
+}
+
+char *
+Z_StrDup(const char *string)
+{
+    char *dup = Z_Malloc(strlen(string) + 1);
+    strcpy(dup, string);
+
+    return dup;
+}
+
+char *
+Z_StrnDup(const char *string, size_t size)
+{
+    char *dup = Z_Malloc(size + 1);
+    qstrncpy(dup, string, size + 1);
+
+    return dup;
 }
 
 /* ======================================================================= */
@@ -540,11 +577,9 @@ Hunk_AllocName(int size, const char *name)
     Cache_FreeLow(hunkstate.lowbytes);
 
     memset(hunk, 0, size);
-
     hunk->size = size;
     hunk->sentinal = HUNK_SENTINAL;
-    memset(hunk->name, 0, HUNK_NAMELEN);
-    memcpy(hunk->name, name, qmin((int)strlen(name), HUNK_NAMELEN));
+    memcpy(hunk->name, name, qmin((int)sizeof(hunk->name), HUNK_NAMELEN));
 
     /* Save a copy of the allocated address */
     hunkstate.lowbase = hunk + 1;
@@ -595,17 +630,6 @@ Hunk_AllocExtend(const void *base, int size)
     hunk->size += size;
 
     return memptr;
-}
-
-/*
- * ===================
- * Hunk_Alloc
- * ===================
- */
-void *
-Hunk_Alloc(int size)
-{
-    return Hunk_AllocName(size, "unknown");
 }
 
 int
@@ -691,7 +715,7 @@ Hunk_HighAllocName(int size, const char *name)
     memset(hunk, 0, size);
     hunk->size = size;
     hunk->sentinal = HUNK_SENTINAL;
-    snprintf(hunk->name, sizeof(hunk->name), "%s", name);
+    memcpy(hunk->name, name, qmin((int)sizeof(hunk->name), HUNK_NAMELEN));
 
     return (void *)(hunk + 1);
 }
@@ -729,7 +753,7 @@ Hunk_TempAlloc(int size)
  * =====================
  * Hunk_TempAllocExtend
  *
- * Extend the existing temp hunk allocation.
+ * Extend the existing temp hunk allocation, rather than freeing first.
  * Size is the number of extra bytes required
  * =====================
  */
@@ -739,7 +763,7 @@ Hunk_TempAllocExtend(int size)
     hunk_t *old, *new;
 
     if (!hunkstate.tempmark)
-	Sys_Error("%s: temp hunk not active", __func__);
+        return Hunk_TempAlloc(size);
 
     old = (hunk_t *)(hunkstate.base + hunkstate.size - hunkstate.highbytes);
     if (old->sentinal != HUNK_SENTINAL)
@@ -759,6 +783,7 @@ Hunk_TempAllocExtend(int size)
     new = (hunk_t *)(hunkstate.base + hunkstate.size - hunkstate.highbytes);
     memmove(new, old, sizeof(hunk_t));
     new->size += size;
+    memset(new + 1, 0, size);
 
     return new + 1;
 }

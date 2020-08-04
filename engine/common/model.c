@@ -23,6 +23,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // on the same machine.
 
 #include <float.h>
+#include <math.h>
 #include <stdint.h>
 
 #include "cmd.h"
@@ -44,6 +45,10 @@ static texture_t r_notexture_mip_qwsv;
 #include "sys.h"
 #ifdef QW_HACK
 #include "crc.h"
+#include "quakedef.h" // host_basepal
+#endif
+#ifdef NQ_HACK
+#include "host.h" // host_basepal
 #endif
 /* FIXME - quick hack to enable merging of NQ/QWSV shared code */
 #define SV_Error Sys_Error
@@ -52,29 +57,107 @@ static texture_t r_notexture_mip_qwsv;
 static void Mod_LoadBrushModel(brushmodel_t *brushmodel, void *buffer, size_t size);
 static model_t *Mod_LoadModel(const char *name, qboolean crash);
 
-static brushmodel_t *loaded_models;
+brushmodel_t *loaded_brushmodels;
 static model_t *loaded_sprites;
 
 #ifdef GLQUAKE
-cvar_t gl_subdivide_size = { "gl_subdivide_size", "128", true };
+cvar_t gl_subdivide_size = { "gl_subdivide_size", "128", CVAR_CONFIG };
 #endif
 
-static const model_loader_t *mod_loader;
+static const alias_loader_t *alias_loader;
+static const brush_loader_t *brush_loader;
 
 static void PVSCache_f(void);
+
+// ======================================================================
+// Mipmap code for 8-bit fence textures
+// TODO: maybe rework texture_t to better integrate with qpic8_t?
+
+static byte
+qpal_24to8(const byte palette[768], const int rgb[3], int alpha)
+{
+    int index, best_index, channel;
+    int dist, best_dist, delta;
+
+    best_dist = INT_MAX;
+    best_index = 0;
+
+    for (index = 0; index < 224; index++) {
+        if (index == alpha)
+            continue;
+        dist = 0;
+        for (channel = 0; channel < 3; channel++) {
+            delta = abs(rgb[channel] - palette[index * 3 + channel]);
+            dist += delta * delta;
+        }
+        if (dist < best_dist) {
+            best_index = index;
+            best_dist = dist;
+        }
+    }
+
+    return (byte)best_index;
+}
+
+/*
+ * Take the color specified in index0 and alpha blend the color in
+ * index1 over the top using an alpha value between zero and one.
+ * Return the nearest color index in the palette.
+ *
+ * Only returns standard colours, fullbrights will be matched to the
+ * nearest color in the standard palette.
+ */
+
+
+static byte
+QPal_AlphaBlendColorIndices(const byte palette[768], byte index0, byte index1, float alpha)
+{
+    int rgb[3];
+
+    rgb[0] = roundf(palette[index1 * 3 + 0] * alpha + palette[index0 * 3 + 0] * (1.0f - alpha));
+    rgb[1] = roundf(palette[index1 * 3 + 1] * alpha + palette[index0 * 3 + 1] * (1.0f - alpha));
+    rgb[2] = roundf(palette[index1 * 3 + 2] * alpha + palette[index0 * 3 + 2] * (1.0f - alpha));
+
+    // Exclude black, since it looks terrible on any transparency
+    // TODO: find black instead of assuming index 0
+    return qpal_24to8(palette, rgb, 0);
+}
+
+/*
+ * Create a transulcency color map
+ * Provides a lookup table for nearest color matching for a fixed alpha value
+ */
+void
+QPal_CreateTranslucencyTable(byte transtable[65536], const byte palette[768], float alpha)
+{
+    int baseindex, blendindex;
+    byte index;
+
+    for (baseindex = 0; baseindex < 256; baseindex++) {
+        for (blendindex = 0; blendindex < 256; blendindex++) {
+            index = QPal_AlphaBlendColorIndices(palette, baseindex, blendindex, alpha);
+            transtable[(baseindex << 8) + blendindex] = index;
+        }
+    }
+}
+
+// ======================================================================
+
+
 /*
 ===============
 Mod_Init
 ===============
 */
 void
-Mod_Init(const model_loader_t *loader)
+Mod_Init(const alias_loader_t *alias_loader_in, const brush_loader_t *brush_loader_in)
 {
 #ifdef GLQUAKE
     Cvar_RegisterVariable(&gl_subdivide_size);
 #endif
     Cmd_AddCommand("pvscache", PVSCache_f);
-    mod_loader = loader;
+    alias_loader = alias_loader_in;
+    brush_loader = brush_loader_in;
 }
 
 /*
@@ -338,7 +421,7 @@ Mod_ClearAll
 void
 Mod_ClearAll(void)
 {
-    loaded_models = NULL;
+    loaded_brushmodels = NULL;
     loaded_sprites = NULL;
     fatpvs = NULL;
     memset(pvscache, 0, sizeof(pvscache));
@@ -366,7 +449,7 @@ Mod_FindName(const char *name)
 	SV_Error("%s: NULL name", __func__);
 
     /* search the currently loaded models */
-    brushmodel = loaded_models;
+    brushmodel = loaded_brushmodels;
     while (brushmodel) {
 	if (!strcmp(brushmodel->model.name, name))
 	    break;
@@ -412,44 +495,48 @@ static model_t *
 Mod_LoadModel(const char *name, qboolean crash)
 {
     byte stackbuf[1024];
-    unsigned *buf, header;
+    unsigned *buffer, header;
     brushmodel_t *brushmodel;
     model_t *model;
     size_t size;
+    byte *brushmodel_header;
+    int pad;
 
     /* Load the file - use stack for tiny models to avoid dirtying heap */
-    buf = COM_LoadStackFile(name, stackbuf, sizeof(stackbuf), &size);
-    if (!buf) {
+    buffer = COM_LoadStackFile(name, stackbuf, sizeof(stackbuf), &size);
+    if (!buffer) {
 	if (crash)
 	    SV_Error("%s: %s not found", __func__, name);
 	return NULL;
     }
 
     /* call the apropriate loader */
-    header = LittleLong(*buf);
+    header = LittleLong(*buffer);
     switch (header) {
 #ifndef SERVERONLY
     case IDPOLYHEADER:
 	model = Mod_NewAliasModel();
-	snprintf(model->name, sizeof(model->name), "%s", name);
-	Mod_LoadAliasModel(mod_loader, model, buf);
+	qsnprintf(model->name, sizeof(model->name), "%s", name);
+	Mod_LoadAliasModel(alias_loader, model, buffer, size);
 	break;
 
     case IDSPRITEHEADER:
 	model = Mod_AllocName(sizeof(*model), name);
-	snprintf(model->name, sizeof(model->name), "%s", name);
+	qsnprintf(model->name, sizeof(model->name), "%s", name);
 	model->next = loaded_sprites;
 	loaded_sprites = model;
-	Mod_LoadSpriteModel(model, buf);
+	Mod_LoadSpriteModel(model, buffer);
 	break;
 #endif
     default:
-	brushmodel = Mod_AllocName(sizeof(*brushmodel), name);
-	brushmodel->next = loaded_models;
-	loaded_models = brushmodel;
+	pad = brush_loader->Padding();
+	brushmodel_header = Mod_AllocName(sizeof(brushmodel_t) + pad, name);
+	brushmodel = (brushmodel_t *)(brushmodel_header + pad);
+	brushmodel->next = loaded_brushmodels;
+	loaded_brushmodels = brushmodel;
 	model = &brushmodel->model;
-	snprintf(model->name, sizeof(model->name), "%s", name);
-	Mod_LoadBrushModel(brushmodel, buf, size);
+	qsnprintf(model->name, sizeof(model->name), "%s", name);
+	Mod_LoadBrushModel(brushmodel, buffer, size);
 	break;
     }
 
@@ -472,16 +559,17 @@ Mod_ForName(const char *name, qboolean crash)
     if (model) {
 #ifndef SERVERONLY
 	void *buffer;
+	size_t buffersize;
 
 	if (model->type != mod_alias)
 	    return model;
 	if (Cache_Check(&model->cache))
 	    return model;
 
-	buffer = COM_LoadTempFile(name);
+	buffer = COM_LoadTempFile(name, &buffersize);
 	model = Mod_NewAliasModel();
-	snprintf(model->name, sizeof(model->name), "%s", name);
-	Mod_LoadAliasModel(mod_loader, model, buffer);
+	qsnprintf(model->name, sizeof(model->name), "%s", name);
+	Mod_LoadAliasModel(alias_loader, model, buffer, buffersize);
 #endif
 	return model;
     }
@@ -495,6 +583,8 @@ Mod_ForName(const char *name, qboolean crash)
  *				BRUSHMODEL LOADING
  * ===========================================================================
  */
+
+//GLQUAKE stuff from tyr goes here
 
 /*
 =================
@@ -527,8 +617,11 @@ Mod_LoadTextures(brushmodel_t *brushmodel, dheader_t *header)
 
     for (i = 0; i < lump->nummiptex; i++) {
 	lump->dataofs[i] = LittleLong(lump->dataofs[i]);
-	if (lump->dataofs[i] == -1)
+	if (lump->dataofs[i] == -1) {
+	    brushmodel->textures[i] = r_notexture_mip;  // checkerboard texture
+	    brushmodel->textures[i]->texturenum = i;
 	    continue;
+	}
 	mt = (miptex_t *)((byte *)lump + lump->dataofs[i]);
 	mt->width = (uint32_t)LittleLong(mt->width);
 	mt->height = (uint32_t)LittleLong(mt->height);
@@ -547,8 +640,7 @@ Mod_LoadTextures(brushmodel_t *brushmodel, dheader_t *header)
 	tx->width = mt->width;
 	tx->height = mt->height;
 	for (j = 0; j < MIPLEVELS; j++)
-	    tx->offsets[j] =
-		mt->offsets[j] + sizeof(texture_t) - sizeof(miptex_t);
+	    tx->offsets[j] = mt->offsets[j] + sizeof(texture_t) - sizeof(miptex_t);
 	/* the pixels immediately follow the structures */
 	memcpy(tx + 1, mt + 1, pixels);
 
@@ -620,6 +712,7 @@ Mod_LoadTextures(brushmodel_t *brushmodel, dheader_t *header)
 		SV_Error("Bad animating texture %s", tx->name);
 	}
 
+//not fully understanding the change here/not in Tyr
 #define	ANIM_CYCLE	2
 	/* Link them all together */
 	for (j = 0; j < max; j++) {
@@ -651,7 +744,7 @@ Mod_LoadTextures(brushmodel_t *brushmodel, dheader_t *header)
  * Mod_LoadBytes
  * - Common code for loading lighting, visibility and entities
  */
-static void *
+void *
 Mod_LoadBytes(brushmodel_t *brushmodel, dheader_t *header, int lumpnum)
 {
     const model_t *model = &brushmodel->model;
@@ -874,6 +967,7 @@ Mod_LoadTexinfo(brushmodel_t *brushmodel, dheader_t *header)
 	if (!brushmodel->textures) {
 #ifndef SERVERONLY
 	    out->texture = r_notexture_mip;	// checkerboard texture
+	    out->flags = TEX_SPECIAL;
 #else
 	    out->texture = &r_notexture_mip_qwsv;	// checkerboard texture
 #endif
@@ -890,6 +984,8 @@ Mod_LoadTexinfo(brushmodel_t *brushmodel, dheader_t *header)
 #endif
 		out->flags = 0;
 	    }
+	    if (out->texture == r_notexture_mip)
+		out->flags |= TEX_SPECIAL;
 	}
     }
 }
@@ -922,10 +1018,26 @@ CalcSurfaceExtents(const brushmodel_t *brushmodel, msurface_t *surf)
 	    const medge_t *const edge = &brushmodel->edges[-edgenum];
 	    vertex = &brushmodel->vertexes[edge->v[1]];
 	}
+    /*
+     * The (long double) casts below are important: The original code was
+     * written for x87 floating-point which uses 80-bit floats for
+     * intermediate calculations. But if you compile it without the casts
+     * for modern x86_64, the compiler will round each intermediate result
+     * to a 32-bit float, which introduces extra rounding error.
+     *
+     * This becomes a problem if the rounding error causes the light
+     * utilities and the engine to disagree about the lightmap size for
+     * some surfaces.
+     *
+     * Casting to (long double) keeps the intermediate values at at least
+     * 64 bits of precision, probably 128.
+     */
 	for (j = 0; j < 2; j++) {
-	    val = vertex->position[0] * texinfo->vecs[j][0] +
-		vertex->position[1] * texinfo->vecs[j][1] +
-		vertex->position[2] * texinfo->vecs[j][2] + texinfo->vecs[j][3];
+	    val =
+		(long double)vertex->position[0] * texinfo->vecs[j][0] +
+		(long double)vertex->position[1] * texinfo->vecs[j][1] +
+		(long double)vertex->position[2] * texinfo->vecs[j][2] +
+					   texinfo->vecs[j][3];
 	    if (val < mins[j])
 		mins[j] = val;
 	    if (val > maxs[j])
@@ -934,14 +1046,19 @@ CalcSurfaceExtents(const brushmodel_t *brushmodel, msurface_t *surf)
     }
 
     for (i = 0; i < 2; i++) {
-	bmins[i] = floor(mins[i] / 16);
-	bmaxs[i] = ceil(maxs[i] / 16);
+	bmins[i] = floorf(mins[i] / 16);
+	bmaxs[i] = ceilf(maxs[i] / 16);
 
 	surf->texturemins[i] = bmins[i] * 16;
 	surf->extents[i] = (bmaxs[i] - bmins[i]) * 16;
 	if (!(texinfo->flags & TEX_SPECIAL) && surf->extents[i] > 256)
 	    SV_Error("Bad surface extents");
-    }
+	
+	    // This hack is to stop the software renderer crashing if a
+	    // bsp with a missing sky texture is loaded.
+	    if (texinfo->texture == r_notexture_mip && surf->extents[i] > 256)
+		surf->extents[i] = 240;
+	}
 }
 
 static void
@@ -978,17 +1095,31 @@ Mod_ProcessSurface(brushmodel_t *brushmodel, msurface_t *surf)
     int i;
 
     /* set the surface drawing flags */
+    if (surf->texinfo->flags & TEX_SPECIAL){
+	surf->flags |= SURF_DRAWTILED;
+    }
     if (!strncmp(texturename, "sky", 3)) {
 	surf->flags |= SURF_DRAWSKY | SURF_DRAWTILED;
 #ifdef GLQUAKE
-	GL_SubdivideSurface(brushmodel, surf);
+    GL_SubdivideSurface(brushmodel, surf);
 #endif
-    } else if (!strncmp(texturename, "*", 1)) {
+    } else if (texturename[0] == '*') {
 	surf->flags |= SURF_DRAWTURB | SURF_DRAWTILED;
+	// Detect special liquid types
+	if (!strncmp(texturename, "*lava", 5)){
+	    surf->flags |= SURF_DRAWLAVA; }
+	else if (!strncmp(texturename, "*slime", 6)){
+	    surf->flags |= SURF_DRAWSLIME; }
+	else if (!strncmp(texturename, "*tele", 5)){
+	    surf->flags |= SURF_DRAWTELE; }
+	else {
+	    surf->flags |= SURF_DRAWWATER; }
 	for (i = 0; i < 2; i++) {
 	    surf->extents[i] = 16384;
 	    surf->texturemins[i] = -8192;
 	}
+    } else if (texturename[0] == '{') {
+	surf->flags |= SURF_DRAWFENCE;
 #ifdef GLQUAKE
 	GL_SubdivideSurface(brushmodel, surf);
 #endif
@@ -1006,6 +1137,7 @@ Mod_LoadFaces_BSP29(brushmodel_t *brushmodel, dheader_t *header)
 {
     const model_t *model = &brushmodel->model;
     const lump_t *headerlump = &header->lumps[LUMP_FACES];
+    const int lightmap_sample_bytes = brush_loader->lightmap_sample_bytes;
     const bsp29_dface_t *in;
     msurface_t *out;
     int i, count, surfnum;
@@ -1048,7 +1180,7 @@ Mod_LoadFaces_BSP29(brushmodel_t *brushmodel, dheader_t *header)
 	if (i == -1)
 	    out->samples = NULL;
 	else
-	    out->samples = brushmodel->lightdata + i;
+	    out->samples = brushmodel->lightdata + i * lightmap_sample_bytes;
 
 	Mod_ProcessSurface(brushmodel, out);
     }
@@ -1059,6 +1191,7 @@ Mod_LoadFaces_BSP2(brushmodel_t *brushmodel, dheader_t *header)
 {
     const model_t *model = &brushmodel->model;
     const lump_t *headerlump = &header->lumps[LUMP_FACES];
+    const int lightmap_sample_bytes = brush_loader->lightmap_sample_bytes;
     const bsp2_dface_t *in;
     msurface_t *out;
     int i, count, surfnum;
@@ -1096,7 +1229,7 @@ Mod_LoadFaces_BSP2(brushmodel_t *brushmodel, dheader_t *header)
 	if (i == -1)
 	    out->samples = NULL;
 	else
-	    out->samples = brushmodel->lightdata + i;
+	    out->samples = brushmodel->lightdata + i * lightmap_sample_bytes;
 
 	Mod_ProcessSurface(brushmodel, out);
     }
@@ -1237,7 +1370,7 @@ Mod_LoadNodes_BSP2(brushmodel_t *brushmodel, dheader_t *header)
     Mod_SetParent(brushmodel->nodes, NULL);
 }
 
-static void
+static void //not in tyr
 Mod_SetLeafFlags(const model_t *model, mleaf_t *leaf)
 {
 #ifdef GLQUAKE
@@ -1253,7 +1386,7 @@ Mod_SetLeafFlags(const model_t *model, mleaf_t *leaf)
 #ifdef QW_HACK
     {
 	char mapmodel[MAX_QPATH];
-	snprintf(mapmodel, sizeof(mapmodel), "maps/%s.bsp",
+	qsnprintf(mapmodel, sizeof(mapmodel), "maps/%s.bsp",
 		 Info_ValueForKey(cl.serverinfo, "map"));
 	if (strcmp(mapmodel, model->name)) {
 #endif
@@ -1666,30 +1799,34 @@ RadiusFromBounds(vec3_t mins, vec3_t maxs)
     vec3_t corner;
 
     for (i = 0; i < 3; i++)
-	corner[i] = qmax(fabs(mins[i]), fabs(maxs[i]));
+	corner[i] = qmax(fabsf(mins[i]), fabsf(maxs[i]));
 
     return Length(corner);
 }
 
 static void
-Mod_SetupSubmodels(brushmodel_t *world)
+Mod_SetupSubmodels(brushmodel_t *world, const brush_loader_t *loader)
 {
     const dmodel_t *dmodel;
     brushmodel_t *submodel;
     model_t *model;
-    int i, j;
+    int i, j, pad;
+    byte *buffer;
 
     /* Set up the extra submodel fields, starting with the world */
     submodel = world;
     model = &submodel->model;
     for (i = 0; i < world->numsubmodels; i++) {
 	if (i > 0) {
-	    submodel = Hunk_AllocName(sizeof(*submodel), "submodel");
+	    pad = loader->Padding();
+	    buffer = Hunk_AllocName(sizeof(brushmodel_t) + pad, "submodel");
+	    submodel = (brushmodel_t *)(buffer + pad);
 	    model = &submodel->model;
 	    *submodel = *world; /* start with world info */
-	    snprintf(model->name, sizeof(model->name), "*%d", i);
-	    submodel->next = loaded_models;
-	    loaded_models = submodel;
+	    submodel->parent = world;
+	    qsnprintf(model->name, sizeof(model->name), "*%d", i);
+	    submodel->next = loaded_brushmodels;
+	    loaded_brushmodels = submodel;
 	}
 
 	dmodel = &world->submodels[i];
@@ -1723,7 +1860,7 @@ BSPVersionString(int32_t version)
 	return "BSP2";
     default:
 	buffer = buffers[1 & ++index];
-	snprintf(buffer, sizeof(buffers[0]), "%d", version);
+	qsnprintf(buffer, sizeof(buffers[0]), "%d", version);
 	return buffer;
     }
 }
@@ -1827,7 +1964,10 @@ Mod_LoadBrushModel(brushmodel_t *brushmodel, void *buffer, size_t size)
     }
     Mod_LoadSurfedges(brushmodel, header);
     Mod_LoadTextures(brushmodel, header);
-    Mod_LoadLighting(brushmodel, header);
+
+    /* Renderer provides the lighting loader */
+    brush_loader->LoadLighting(brushmodel, header);
+
     Mod_LoadPlanes(brushmodel, header);
     Mod_LoadTexinfo(brushmodel, header);
     if (header->version == BSPVERSION) {
@@ -1873,7 +2013,10 @@ Mod_LoadBrushModel(brushmodel_t *brushmodel, void *buffer, size_t size)
 	Mod_InitPVSCache(brushmodel->numleafs);
     }
 
-    Mod_SetupSubmodels(brushmodel);
+    Mod_SetupSubmodels(brushmodel, brush_loader);
+
+    // Allow the loader to do additional post-processing
+    brush_loader->PostProcess(brushmodel);
 }
 
 /*
@@ -1894,13 +2037,14 @@ void *
 Mod_Extradata(model_t *model)
 {
     void *buffer;
+    size_t buffersize;
 
     buffer = Cache_Check(&model->cache);
     if (buffer)
 	return buffer;
 
-    buffer = COM_LoadTempFile(model->name);
-    Mod_LoadAliasModel(mod_loader, model, buffer);
+    buffer = COM_LoadTempFile(model->name, &buffersize);
+    Mod_LoadAliasModel(alias_loader, model, buffer, buffersize);
     if (!model->cache.data)
 	Sys_Error("%s: caching failed", __func__);
 
@@ -1936,7 +2080,7 @@ Mod_Print(void)
 	sprite++;
     }
 
-    brushmodel = loaded_models;
+    brushmodel = loaded_brushmodels;
     while (brushmodel) {
 	model = &brushmodel->model;
 	Con_Printf("%*p : %s\n", (int)sizeof(void *) * 2 + 2,
@@ -1948,6 +2092,36 @@ Mod_Print(void)
     Con_Printf("%d models: %d alias, %d bsp, %d sprite\n",
 	       alias + bsp + sprite, alias, bsp, sprite);
 }
+
+#ifdef GLQUAKE
+void
+Mod_ReloadTextures()
+{
+    const model_t *model;
+    brushmodel_t *brushmodel;
+
+    /* Alias models */
+    for (model = Mod_AliasCache(); model; model = model->next) {
+        GL_LoadAliasSkinTextures(model, NULL);
+    }
+    for (model = Mod_AliasOverflow(); model; model = model->next) {
+        GL_LoadAliasSkinTextures(model, NULL);
+    }
+
+    /* Sprites */
+    for (model = loaded_sprites; model; model = model->next) {
+        GL_LoadSpriteTextures(model);
+    }
+
+    /* Brush models */
+    for (brushmodel = loaded_brushmodels; brushmodel; brushmodel = brushmodel->next) {
+        if (brushmodel->parent)
+            continue;
+        GL_LoadBrushModelTextures(brushmodel);
+        GL_ReloadLightmapTextures(GLBrushModel(brushmodel)->resources);
+    }
+}
+#endif
 
 /*
 ==================

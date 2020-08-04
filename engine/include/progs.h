@@ -34,15 +34,17 @@ typedef union eval_s {
     int edict;
 } eval_t;
 
-#define	MAX_ENT_LEAFS	16
+#define MAX_ENT_LEAFS 48
 typedef struct edict_s {
     qboolean free;
+
     link_t area;		// linked to a division node or leaf
 
     int num_leafs;
-    short leafnums[MAX_ENT_LEAFS];
+    int leafnums[MAX_ENT_LEAFS];
 
     entity_state_t baseline;
+    unsigned char alpha;
 
     float freetime;		// sv.time when the object was freed
     entvars_t v;		// C exported fields from progs
@@ -60,6 +62,7 @@ extern globalvars_t *pr_global_struct;
 extern float *pr_globals;	// same as pr_global_struct
 
 extern int pr_edict_size;	// in bytes
+extern qboolean pr_alpha_supported;
 
 //============================================================================
 

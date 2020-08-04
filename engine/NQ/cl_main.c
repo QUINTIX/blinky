@@ -38,22 +38,22 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // references them even when on a unix system.
 
 // these two are not intended to be set directly
-cvar_t cl_name = { "_cl_name", "player", true };
-cvar_t cl_color = { "_cl_color", "0", true };
+cvar_t cl_name = { "_cl_name", "player", CVAR_CONFIG };
+cvar_t cl_color = { "_cl_color", "0", CVAR_CONFIG };
 
 cvar_t cl_shownet = { "cl_shownet", "0" };	// can be 0, 1, or 2
 cvar_t cl_nolerp = { "cl_nolerp", "0" };
 
-cvar_t lookspring = { "lookspring", "0", true };
-cvar_t lookstrafe = { "lookstrafe", "0", true };
-cvar_t sensitivity = { "sensitivity", "3", true };
+cvar_t lookspring = { "lookspring", "0", CVAR_CONFIG };
+cvar_t lookstrafe = { "lookstrafe", "0", CVAR_CONFIG };
+cvar_t sensitivity = { "sensitivity", "3", CVAR_CONFIG };
 
-cvar_t m_pitch = { "m_pitch", "0.022", true };
-cvar_t m_yaw = { "m_yaw", "0.022", true };
-cvar_t m_forward = { "m_forward", "1", true };
-cvar_t m_side = { "m_side", "0.8", true };
+cvar_t m_pitch = { "m_pitch", "0.022", CVAR_CONFIG };
+cvar_t m_yaw = { "m_yaw", "0.022", CVAR_CONFIG };
+cvar_t m_forward = { "m_forward", "1", CVAR_CONFIG };
+cvar_t m_side = { "m_side", "0.8", CVAR_CONFIG };
 
-cvar_t m_freelook = { "m_freelook", "1", true };
+cvar_t m_freelook = { "m_freelook", "1", CVAR_CONFIG };
 
 
 client_static_t cls;
@@ -67,7 +67,8 @@ lightstyle_t cl_lightstyle[MAX_LIGHTSTYLES];
 dlight_t cl_dlights[MAX_DLIGHTS];
 
 int cl_numvisedicts;
-entity_t cl_visedicts[MAX_VISEDICTS];
+entity_t *cl_visedicts[MAX_VISEDICTS];
+int cl_visedicts_framenum;
 
 /*
  * FIXME - horribly hackish because we don't have a way to tell if the
@@ -90,7 +91,7 @@ CL_PlayerEntity(const entity_t *e)
     /* ...but if not, try to find a match */
     for (i = 1; i <= cl.maxclients; i++) {
 	/* Compare just the top of the struct, up to the lerp info */
-	if (!memcmp(e, &cl_entities[i], offsetof(entity_t, previouspose)))
+	if (!memcmp(e, &cl_entities[i], offsetof(entity_t, lerp)))
 	    return i;
     }
 
@@ -149,7 +150,8 @@ CL_Disconnect(void)
 
     /* Clear up view, remove palette shift */
     scr_centertime_off = 0;
-    cl.cshifts[0].percent = 0;
+    for (int i = 0; i < NUM_CSHIFTS; i++)
+	cl.cshifts[i].percent = 0;
     VID_SetPalette(host_basepal);
 
 // if running a local server, shut it down
@@ -291,7 +293,7 @@ CL_NextDemo(void)
 	}
     }
 
-    sprintf(str, "playdemo %s\n", cls.demos[cls.demonum]);
+    qsnprintf(str, sizeof(str), "playdemo %s\n", cls.demos[cls.demonum]);
     Cbuf_InsertText(str);
     cls.demonum++;
 }
@@ -331,7 +333,7 @@ CL_Name_f(void)
 	return;
     }
     arg = (Cmd_Argc() == 2) ? Cmd_Argv(1) : Cmd_Args();
-    snprintf(new_name, sizeof(new_name), "%s", arg);
+    qsnprintf(new_name, sizeof(new_name), "%s", arg);
     if (!strcmp(cl_name.string, new_name))
 	return;
 
@@ -546,7 +548,7 @@ CL_RelinkEntities(void)
 {
     entity_t *ent;
     int i, j;
-    float frac, f, d;
+    float frac, lerpfrac, angledelta;
     vec3_t delta;
     float bobjrotate;
     vec3_t oldorg;
@@ -554,6 +556,9 @@ CL_RelinkEntities(void)
 
 // determine partial update time
     frac = CL_LerpPoint();
+
+    /* Record the frame number at which we last updated the visedicts */
+    cl_visedicts_framenum++;
 
     cl_numvisedicts = 0;
 
@@ -567,12 +572,12 @@ CL_RelinkEntities(void)
     if (cls.demoplayback) {
 	// interpolate the angles
 	for (j = 0; j < 3; j++) {
-	    d = cl.mviewangles[0][j] - cl.mviewangles[1][j];
-	    if (d >= 180)
-		d -= 360;
-	    else if (d < -180)
-		d += 360;
-	    cl.viewangles[j] = cl.mviewangles[1][j] + frac * d;
+	    angledelta = cl.mviewangles[0][j] - cl.mviewangles[1][j];
+	    if (angledelta >= 180)
+		    angledelta -= 360;
+	    else if (angledelta < -180)
+		angledelta += 360;
+	    cl.viewangles[j] = cl.mviewangles[1][j] + frac * angledelta;
 	}
     }
 
@@ -586,15 +591,10 @@ CL_RelinkEntities(void)
 	    continue;
 	}
 // if the object wasn't included in the last packet, remove it
-	if (ent->msgtime != cl.mtime[0]) {
+    if (ent->msgtime != cl.mtime[0]) {
 	    ent->model = NULL;
 	    /* Reset lerp info as well */
-	    ent->previousframe = 0;
-	    ent->currentframe = 0;
-	    ent->previousorigintime = 0;
-	    ent->currentorigintime = 0;
-	    ent->previousanglestime = 0;
-	    ent->currentanglestime = 0;
+	    ent->lerp.flags |= LERP_RESETMOVE | LERP_RESETANIM;
 	    continue;
 	}
 
@@ -608,39 +608,40 @@ CL_RelinkEntities(void)
 	    VectorCopy(ent->msg_origins[0], ent->origin);
 	    VectorCopy(ent->msg_angles[0], ent->angles);
 	} else {
-	    f = frac;
+	    lerpfrac = frac;
 	    for (j = 0; j < 3; j++) {
 		delta[j] = ent->msg_origins[0][j] - ent->msg_origins[1][j];
 		if (delta[j] > 100 || delta[j] < -100)
-		    f = 1;	/* assume a teleport and don't lerp */
+		    lerpfrac = 1;	/* assume a teleport and don't lerp */
+		ent->lerp.flags |= LERP_RESETMOVE;
 	    }
 
 	    /*
 	     * interpolate the origin and angles
 	     */
 	    for (j = 0; j < 3; j++) {
-		ent->origin[j] = ent->msg_origins[1][j] + f * delta[j];
-		d = ent->msg_angles[0][j] - ent->msg_angles[1][j];
-		if (d >= 180)
-		    d -= 360;
-		else if (d < -180)
-		    d += 360;
-		ent->angles[j] = ent->msg_angles[1][j] + f * d;
+		ent->origin[j] = ent->msg_origins[1][j] + lerpfrac * delta[j];
+		angledelta = ent->msg_angles[0][j] - ent->msg_angles[1][j];
+		if (angledelta >= 180)
+		    angledelta -= 360;
+		else if (angledelta < -180)
+		    angledelta += 360;
+		ent->angles[j] = ent->msg_angles[1][j] + lerpfrac * angledelta;
 	    }
 	}
 
 // rotate binary objects locally
-	if (ent->model->flags & EF_ROTATE)
-	    ent->angles[1] = bobjrotate;
+	if (ent->model->flags & MOD_EF_ROTATE)
+		    ent->angles[1] = bobjrotate;
 
 	/*
 	 * FIXME - Some of these entity effects may be mutually exclusive?
 	 * work out which bits can be done better (e.g. I've already done the
 	 * RED|BLUE bit a little better...)
 	 */
-	if (ent->effects & EF_BRIGHTFIELD)
+	if (ent->effects & ENT_EF_BRIGHTFIELD)
 	    R_EntityParticles(ent);
-	if (ent->effects & EF_MUZZLEFLASH) {
+	if (ent->effects & ENT_EF_MUZZLEFLASH) {
 	    vec3_t fv, rv, uv;
 
 	    dl = CL_AllocDlight(i);
@@ -653,35 +654,47 @@ CL_RelinkEntities(void)
 	    dl->minlight = 32;
 	    dl->die = cl.time + 0.1;
 	    dl->color = dl_colors[DLIGHT_FLASH];
+
+        /*
+             * Assume muzzle flash is accompanied by muzzle flare,
+             * which looks bad when lerped.  Disable lerping for two
+             * frames.
+             */
+            if (r_lerpmodels.value != 2) {
+                if (ent == &cl_entities[cl.viewentity])
+                    cl.viewent.lerp.flags |= LERP_RESETANIM | LERP_RESETANIM2;
+                else
+                    ent->lerp.flags |= LERP_RESETANIM | LERP_RESETANIM2;
+            }
 	}
-	if (ent->effects & EF_BRIGHTLIGHT) {
-	    dl = CL_AllocDlight(i);
+	if (ent->effects & ENT_EF_BRIGHTLIGHT) {
+		    dl = CL_AllocDlight(i);
 	    VectorCopy(ent->origin, dl->origin);
 	    dl->origin[2] += 16;
 	    dl->radius = 400 + (rand() & 31);
 	    dl->die = cl.time + 0.001;
 	    dl->color = dl_colors[DLIGHT_FLASH];
 	}
-	if (ent->effects & EF_DIMLIGHT) {
+	if (ent->effects & ENT_EF_DIMLIGHT) {
 	    dl = CL_AllocDlight(i);
 	    VectorCopy(ent->origin, dl->origin);
 	    dl->radius = 200 + (rand() & 31);
 	    dl->die = cl.time + 0.001;
 	    dl->color = dl_colors[DLIGHT_FLASH];
 	}
-	if ((ent->effects & (EF_RED | EF_BLUE)) == (EF_RED | EF_BLUE)) {
+	if ((ent->effects & (ENT_EF_RED | ENT_EF_BLUE)) == (ENT_EF_RED | ENT_EF_BLUE)) {
 	    dl = CL_AllocDlight(i);
 	    VectorCopy(ent->origin, dl->origin);
 	    dl->radius = 200 + (rand() & 31);
 	    dl->die = cl.time + 0.001;
 	    dl->color = dl_colors[DLIGHT_PURPLE];
-	} else if (ent->effects & EF_BLUE) {
+	} else if (ent->effects & ENT_EF_BLUE) {
 	    dl = CL_AllocDlight(i);
 	    VectorCopy(ent->origin, dl->origin);
 	    dl->radius = 200 + (rand() & 31);
 	    dl->die = cl.time + 0.001;
 	    dl->color = dl_colors[DLIGHT_BLUE];
-	} else if (ent->effects & EF_RED) {
+	} else if (ent->effects & ENT_EF_RED) {
 	    dl = CL_AllocDlight(i);
 	    VectorCopy(ent->origin, dl->origin);
 	    dl->radius = 200 + (rand() & 31);
@@ -689,23 +702,23 @@ CL_RelinkEntities(void)
 	    dl->color = dl_colors[DLIGHT_RED];
 	}
 
-	if (ent->model->flags & EF_GIB)
-	    R_RocketTrail(oldorg, ent->origin, 2);
-	else if (ent->model->flags & EF_ZOMGIB)
+	if (ent->model->flags & MOD_EF_GIB)
+		    R_RocketTrail(oldorg, ent->origin, 2);
+	else if (ent->model->flags & MOD_EF_ZOMGIB)
 	    R_RocketTrail(oldorg, ent->origin, 4);
-	else if (ent->model->flags & EF_TRACER)
+	else if (ent->model->flags & MOD_EF_TRACER)
 	    R_RocketTrail(oldorg, ent->origin, 3);
-	else if (ent->model->flags & EF_TRACER2)
+	else if (ent->model->flags & MOD_EF_TRACER2)
 	    R_RocketTrail(oldorg, ent->origin, 5);
-	else if (ent->model->flags & EF_ROCKET) {
+	else if (ent->model->flags & MOD_EF_ROCKET) {
 	    R_RocketTrail(oldorg, ent->origin, 0);
 	    dl = CL_AllocDlight(i);
 	    VectorCopy(ent->origin, dl->origin);
 	    dl->radius = 200;
 	    dl->die = cl.time + 0.01;
-	} else if (ent->model->flags & EF_GRENADE)
+	} else if (ent->model->flags & MOD_EF_GRENADE)
 	    R_RocketTrail(oldorg, ent->origin, 1);
-	else if (ent->model->flags & EF_TRACER3)
+	else if (ent->model->flags & MOD_EF_TRACER3)
 	    R_RocketTrail(oldorg, ent->origin, 6);
 
 	ent->forcelink = false;
@@ -714,7 +727,7 @@ CL_RelinkEntities(void)
 	    continue;
 
 	if (cl_numvisedicts < MAX_VISEDICTS) {
-	    cl_visedicts[cl_numvisedicts] = *ent;
+	    cl_visedicts[cl_numvisedicts] = ent;
 	    cl_numvisedicts++;
 	}
     }

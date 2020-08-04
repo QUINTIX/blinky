@@ -15,25 +15,29 @@ See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
-
 */
 
-#include "SDL.h"
-
-extern SDL_Window *sdl_window;
-extern SDL_PixelFormat *sdl_desktop_format;
+#ifndef PCX_H
+#define PCX_H
 
 typedef struct {
-    typeof(SDL_PIXELFORMAT_UNKNOWN) format;
-} qvidformat_t;
+    char identifier;
+    char version;
+    char encoding;
+    char bits_per_pixel;
+    unsigned short xmin, ymin, xmax, ymax;
+    unsigned short hres, vres;
+    unsigned char palette[48];
+    char reserved;
+    char color_planes;
+    unsigned short bytes_per_line;
+    unsigned short palette_type;
+    char reserved2[58];
+    unsigned char data[];
+} pcx_t;
 
-/*
- * Independent subsystems can call this to ensure the main SDL_Init()
- * has been called at least once before they init their subsystem
- * via SDL_InitSubSystem(SDL_INIT_FOO)
- */
-void Q_SDL_InitOnce();
+void SwapPCX(pcx_t *pcx);
+void WritePCXfile(const char *filename, const byte *data, int width, int height,
+		  int rowbytes, const byte *palette, qboolean upload);
 
-void VID_SDL_SetIcon();
-void VID_SDL_InitModeList();
-void IN_SDL_HandleEvent(SDL_Event *event);
+#endif // PCX_H

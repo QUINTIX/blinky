@@ -279,7 +279,7 @@ Draw_CachePic(const char *path)
     mark = Hunk_LowMark();
 
     /* load the pic from disk */
-    snprintf(cachepic->name, sizeof(cachepic->name), "%s", path);
+    qsnprintf(cachepic->name, sizeof(cachepic->name), "%s", path);
     dpic = COM_LoadHunkFile(path);
     if (!dpic)
 	Sys_Error("%s: failed to load %s", __func__, path);
@@ -413,7 +413,7 @@ Draw_Init(void)
     pic->pixels = dpic->data;
 
     /* hack the version number directly into the pic */
-    snprintf(version, sizeof(version), "%s", stringify(TYR_VERSION));
+    qsnprintf(version, sizeof(version), "%s", stringify(TYR_VERSION));
     Draw_ConbackString(pic, dpic->data, version);
 
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);

@@ -448,9 +448,8 @@ PF_normalize(void)
 
     value1 = G_VECTOR(OFS_PARM0);
 
-    new =
-	value1[0] * value1[0] + value1[1] * value1[1] + value1[2] * value1[2];
-    new = sqrt(new);
+    new = value1[0] * value1[0] + value1[1] * value1[1] + value1[2] * value1[2];
+    new = sqrtf(new);
 
     if (new == 0)
 	newvalue[0] = newvalue[1] = newvalue[2] = 0;
@@ -479,9 +478,8 @@ PF_vlen(void)
 
     value1 = G_VECTOR(OFS_PARM0);
 
-    new =
-	value1[0] * value1[0] + value1[1] * value1[1] + value1[2] * value1[2];
-    new = sqrt(new);
+    new = value1[0] * value1[0] + value1[1] * value1[1] + value1[2] * value1[2];
+    new = sqrtf(new);
 
     G_FLOAT(OFS_RETURN) = new;
 }
@@ -540,7 +538,7 @@ PF_vectoangles(void)
 	if (yaw < 0)
 	    yaw += 360;
 
-	forward = sqrt(value1[0] * value1[0] + value1[1] * value1[1]);
+	forward = sqrtf(value1[0] * value1[0] + value1[1] * value1[1]);
 	pitch = (int)(atan2(value1[2], forward) * 180 / M_PI);
 	if (pitch < 0)
 	    pitch += 360;
@@ -1033,10 +1031,11 @@ PF_ftos(void)
 
     v = G_FLOAT(OFS_PARM0);
 
-    if (v == (int)v)
-	sprintf(pr_string_temp, "%d", (int)v);
-    else
-	sprintf(pr_string_temp, "%5.1f", v);
+    if (v == (int)v) {
+	qsnprintf(pr_string_temp, sizeof(pr_string_temp), "%d", (int)v);
+    } else {
+	qsnprintf(pr_string_temp, sizeof(pr_string_temp), "%5.1f", v);
+    }
     G_INT(OFS_RETURN) = PR_SetString(pr_string_temp);
 }
 
@@ -1046,13 +1045,13 @@ PF_fabs(void)
     float v;
 
     v = G_FLOAT(OFS_PARM0);
-    G_FLOAT(OFS_RETURN) = fabs(v);
+    G_FLOAT(OFS_RETURN) = fabsf(v);
 }
 
 static void
 PF_vtos(void)
 {
-    sprintf(pr_string_temp, "'%5.1f %5.1f %5.1f'", G_VECTOR(OFS_PARM0)[0],
+    qsnprintf(pr_string_temp, sizeof(pr_string_temp), "'%5.1f %5.1f %5.1f'", G_VECTOR(OFS_PARM0)[0],
 	    G_VECTOR(OFS_PARM0)[1], G_VECTOR(OFS_PARM0)[2]);
     G_INT(OFS_RETURN) = PR_SetString(pr_string_temp);
 }
@@ -1355,13 +1354,13 @@ PF_rint(void)
 static void
 PF_floor(void)
 {
-    G_FLOAT(OFS_RETURN) = floor(G_FLOAT(OFS_PARM0));
+    G_FLOAT(OFS_RETURN) = floorf(G_FLOAT(OFS_PARM0));
 }
 
 static void
 PF_ceil(void)
 {
-    G_FLOAT(OFS_RETURN) = ceil(G_FLOAT(OFS_PARM0));
+    G_FLOAT(OFS_RETURN) = ceilf(G_FLOAT(OFS_PARM0));
 }
 
 
@@ -1770,6 +1769,12 @@ PF_makestatic(void)
 
     ent = G_EDICT(OFS_PARM0);
 
+    /* Don't send invisible static entities */
+    if (ent->alpha == ENTALPHA_ZERO) {
+        ED_Free(ent);
+        return;
+    }
+
 #ifdef NQ_HACK
     bits = 0;
     if (sv.protocol == PROTOCOL_VERSION_FITZ) {
@@ -1777,10 +1782,8 @@ PF_makestatic(void)
 	    bits |= B_FITZ_LARGEMODEL;
 	if ((int)ent->v.frame & 0xff00)
 	    bits |= B_FITZ_LARGEFRAME;
-#if 0
 	if (ent->alpha != ENTALPHA_DEFAULT)
 	    bits |= B_FITZ_ALPHA;
-#endif
     }
 
     if (bits) {
@@ -1789,7 +1792,7 @@ PF_makestatic(void)
     } else {
 	MSG_WriteByte(&sv.signon, svc_spawnstatic);
     }
-    SV_WriteModelIndex(&sv.signon, SV_ModelIndex(PR_GetString(ent->v.model)), bits);
+    SV_WriteModelIndex(&sv.signon, SV_ModelIndex(PR_GetString(ent->v.model)), bits, msgtype_baseline);
 #endif
 #ifdef QW_HACK
     MSG_WriteByte(&sv.signon, svc_spawnstatic);
@@ -1805,8 +1808,8 @@ PF_makestatic(void)
 	MSG_WriteAngle(&sv.signon, ent->v.angles[i]);
     }
 
-#if 0
-    if (bits & B_ALPHA)
+#ifdef NQ_HACK
+    if (bits & B_FITZ_ALPHA)
 	MSG_WriteByte(&sv.signon, ent->alpha);
 #endif
 
@@ -1934,11 +1937,11 @@ PF_infokey(void)
     } else if (e1 <= MAX_CLIENTS) {
 	if (!strcmp(key, "ip")) {
 	    netadr_t addr = svs.clients[e1 - 1].netchan.remote_address;
-	    snprintf(buf, sizeof(buf), "%s", NET_BaseAdrToString(addr));
+	    qsnprintf(buf, sizeof(buf), "%s", NET_BaseAdrToString(addr));
 	    value = buf;
 	} else if (!strcmp(key, "ping")) {
 	    int ping = SV_CalcPing(&svs.clients[e1 - 1]);
-	    snprintf(buf, sizeof(buf), "%d", ping);
+	    qsnprintf(buf, sizeof(buf), "%d", ping);
 	    value = buf;
 	} else
 	    value = Info_ValueForKey(svs.clients[e1 - 1].userinfo, key);

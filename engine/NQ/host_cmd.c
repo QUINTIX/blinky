@@ -18,6 +18,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
+#include "buildinfo.h"
 #include "client.h"
 #include "cmd.h"
 #include "console.h"
@@ -182,8 +183,9 @@ Host_Restart_f(void)
 
     if (cmd_source != src_command)
 	return;
-    strcpy(mapname, sv.name);	// must copy out, because it gets cleared
-    // in sv_spawnserver
+
+    // Must copy out the map name, because it gets cleared in sv_spawnserver
+    strcpy(mapname, sv.name);
     SV_SpawnServer(mapname);
 }
 
@@ -198,8 +200,19 @@ This is sent just before a server changes levels
 static void
 Host_Reconnect_f(void)
 {
+    int i;
+
+    // TODO: Consolidate this state reset stuff into a common func
+    S_StopAllSounds(true);
+    scr_centertime_off = 0;
+    for (i = 0; i < NUM_CSHIFTS; i++)
+        cl.cshifts[i].percent = 0;
+    VID_SetPalette(host_basepal);
+
     SCR_BeginLoadingPlaque();
-    cls.signon = 0;		// need new connection messages
+
+    // Need new connection messages
+    cls.signon = 0;
 
     // FIXME - this check is just paranoia until I understand it better
     if (cls.state < ca_connected)
@@ -257,7 +270,7 @@ Host_SavegameComment(char *text)
     for (i = 0; i < SAVEGAME_COMMENT_LENGTH; i++)
 	text[i] = ' ';
     memcpy(text, cl.levelname, strlen(cl.levelname));
-    sprintf(kills, "kills:%3i/%3i", cl.stats[STAT_MONSTERS],
+    qsnprintf(kills, sizeof(kills), "kills:%3i/%3i", cl.stats[STAT_MONSTERS],
 	    cl.stats[STAT_TOTALMONSTERS]);
     memcpy(text + 22, kills, strlen(kills));
 // convert space to _ to make stdio happy
@@ -316,7 +329,7 @@ Host_Savegame_f(void)
 	}
     }
 
-    length = snprintf(name, sizeof(name), "%s/%s", com_gamedir, Cmd_Argv(1));
+    length = qsnprintf(name, sizeof(name), "%s/%s", com_gamedir, Cmd_Argv(1));
     err = COM_DefaultExtension(name, ".sav", name, sizeof(name));
     if (length >= sizeof(name) || err) {
 	Con_Printf("ERROR: couldn't save, filename too long.\n");
@@ -390,7 +403,7 @@ Host_Loadgame_f(void)
 
     cls.demonum = -1;		// stop demo loop in case this fails
 
-    length = snprintf(name, sizeof(name), "%s/%s", com_gamedir, Cmd_Argv(1));
+    length = qsnprintf(name, sizeof(name), "%s/%s", com_gamedir, Cmd_Argv(1));
     err = COM_DefaultExtension(name, ".sav", name, sizeof(name));
     if (length >= sizeof(name) || err) {
 	Con_Printf("ERROR: couldn't open save game, filename too long.\n");
@@ -445,7 +458,7 @@ Host_Loadgame_f(void)
 
     for (i = 0; i < MAX_LIGHTSTYLES; i++) {
 	fscanf(f, "%s\n", str);
-	lightstyle = Hunk_Alloc(strlen(str) + 1);
+	lightstyle = Hunk_AllocName(strlen(str) + 1, "lightstyle");
 	strcpy(lightstyle, str);
 	sv.lightstyles[i] = lightstyle;
     }
@@ -508,8 +521,8 @@ Host_Loadgame_f(void)
 static void
 Host_Version_f(void)
 {
-    Con_Printf("Version TyrQuake-%s\n", stringify(TYR_VERSION));
-    Con_Printf("Exe: " __TIME__ " " __DATE__ "\n");
+    Con_Printf("Version TyrQuake-%s\n", build_version);
+    Con_Printf("Exe: %s", Build_DateString());
 }
 
 /*

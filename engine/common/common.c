@@ -50,6 +50,47 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "sys.h"
 #include "zone.h"
 
+
+// ======================================================================
+// STRING HANDLING
+// ======================================================================
+
+int
+qvsnprintf(char *str, size_t size, const char *format, va_list argptr)
+{
+    int written;
+
+    written = vsnprintf(str, size, format, argptr);
+    if (written >= size)
+        str[size - 1] = 0;
+
+    return written;
+}
+
+int
+qsnprintf(char *str, size_t size, const char *format, ...)
+{
+    va_list argptr;
+    int written;
+
+    va_start(argptr, format);
+    written = qvsnprintf(str, size, format, argptr);
+    va_end(argptr);
+
+    return written;
+}
+
+char *
+qstrncpy(char *dest, const char *src, size_t size)
+{
+    strncpy(dest, src, size - 1);
+    dest[size - 1] = 0;
+
+    return dest;
+}
+
+// ======================================================================
+
 #define NUM_SAFE_ARGVS 7
 
 static const char *largv[MAX_NUM_ARGVS + NUM_SAFE_ARGVS + 1];
@@ -61,13 +102,11 @@ static const char *safeargvs[NUM_SAFE_ARGVS] = {
 
 cvar_t registered = { "registered", "0" };
 #ifdef NQ_HACK
-static cvar_t cmdline = { "cmdline", "0", false, true };
+static cvar_t cmdline = { "cmdline", "0", 0, true };
 #endif
 
 static qboolean com_modified;		// set true if using non-id files
 static int static_registered = 1;	// only for startup check, then set
-
-qboolean msg_suppress_1 = 0;
 
 static void COM_InitFilesystem(void);
 static void COM_Path_f(void);
@@ -315,81 +354,6 @@ Q_atof(const char *str)
 }
 
 /*
-============================================================================
-
-					BYTE ORDER FUNCTIONS
-
-============================================================================
-*/
-
-qboolean bigendien;
-
-short (*BigShort) (short l);
-short (*LittleShort) (short l);
-int (*BigLong) (int l);
-int (*LittleLong) (int l);
-float (*BigFloat) (float l);
-float (*LittleFloat) (float l);
-
-short
-ShortSwap(short l)
-{
-    byte b1, b2;
-
-    b1 = l & 255;
-    b2 = (l >> 8) & 255;
-
-    return (b1 << 8) + b2;
-}
-
-short
-ShortNoSwap(short l)
-{
-    return l;
-}
-
-int
-LongSwap(int l)
-{
-    byte b1, b2, b3, b4;
-
-    b1 = l & 255;
-    b2 = (l >> 8) & 255;
-    b3 = (l >> 16) & 255;
-    b4 = (l >> 24) & 255;
-
-    return ((int)b1 << 24) + ((int)b2 << 16) + ((int)b3 << 8) + b4;
-}
-
-int
-LongNoSwap(int l)
-{
-    return l;
-}
-
-float
-FloatSwap(float f)
-{
-    union {
-	float f;
-	byte b[4];
-    } dat1, dat2;
-
-    dat1.f = f;
-    dat2.b[0] = dat1.b[3];
-    dat2.b[1] = dat1.b[2];
-    dat2.b[2] = dat1.b[1];
-    dat2.b[3] = dat1.b[0];
-    return dat2.f;
-}
-
-float
-FloatNoSwap(float f)
-{
-    return f;
-}
-
-/*
 ==============================================================================
 
 			MESSAGE IO FUNCTIONS
@@ -495,7 +459,7 @@ MSG_WriteStringvf(sizebuf_t *sb, const char *fmt, va_list ap)
      * hand. Update the SZ interface?
      */
     maxlen = sb->maxsize - sb->cursize;
-    len = vsnprintf((char *)sb->data + sb->cursize, maxlen, fmt, ap);
+    len = qvsnprintf((char *)sb->data + sb->cursize, maxlen, fmt, ap);
 
     /* Use SZ_GetSpace to check for overflow */
     SZ_GetSpace(sb, len + 1);
@@ -1006,7 +970,7 @@ COM_FileBase(const char *in, char *out, size_t buflen)
 	in = "?model?";
 	copylen = strlen(in);
     }
-    snprintf(out, buflen, "%.*s", copylen, in);
+    qsnprintf(out, buflen, "%.*s", copylen, in);
 }
 
 
@@ -1030,25 +994,19 @@ COM_DefaultExtension(const char *path, const char *extension, char *out,
     return 0;
 }
 
-int
-COM_CheckExtension(const char *path, const char *extn)
+static int
+COM_CheckSuffix(const char *path, const char *suffix)
 {
-    char *pos;
-    int ret = 0;
+    int pathlen = strlen(path);
+    int suffixlen = strlen(suffix);
 
-    pos = strrchr(path, '.');
-    if (pos) {
-	if (extn[0] != '.')
-	    pos++;
-	ret = pos && !strcasecmp(pos, extn);
-    }
-
-    return ret;
+    return pathlen >= suffixlen && !strcmp(path + pathlen - suffixlen, suffix);
 }
 
 //============================================================================
 
-static char com_tokenbuf[1024];
+#define COM_MAX_TOKEN 4096
+static char com_tokenbuf[COM_MAX_TOKEN];
 const char *com_token = com_tokenbuf;
 unsigned com_argc;
 const char **com_argv;
@@ -1306,32 +1264,6 @@ COM_Init
 void
 COM_Init(void)
 {
-    union {
-	byte b[2];
-	short s;
-    } swaptest = {
-	.b = { 1, 0 }
-    };
-
-// set the byte swapping variables in a portable manner
-    if (swaptest.s == 1) {
-	bigendien = false;
-	BigShort = ShortSwap;
-	LittleShort = ShortNoSwap;
-	BigLong = LongSwap;
-	LittleLong = LongNoSwap;
-	BigFloat = FloatSwap;
-	LittleFloat = FloatNoSwap;
-    } else {
-	bigendien = true;
-	BigShort = ShortNoSwap;
-	LittleShort = ShortSwap;
-	BigLong = LongNoSwap;
-	LittleLong = LongSwap;
-	BigFloat = FloatNoSwap;
-	LittleFloat = FloatSwap;
-    }
-
     Cvar_RegisterVariable(&registered);
 #ifdef NQ_HACK
     Cvar_RegisterVariable(&cmdline);
@@ -1351,7 +1283,7 @@ does a varargs printf into a temp buffer, so I don't need to have
 varargs versions of all text functions.
 ============
 */
-char *
+const char *
 va(const char *format, ...)
 {
     va_list argptr;
@@ -1360,7 +1292,7 @@ va(const char *format, ...)
 
     buf = COM_GetStrBuf();
     va_start(argptr, format);
-    len = vsnprintf(buf, COM_STRBUF_LEN, format, argptr);
+    len = qvsnprintf(buf, COM_STRBUF_LEN, format, argptr);
     va_end(argptr);
 
     if (len > COM_STRBUF_LEN - 1)
@@ -1377,9 +1309,6 @@ QUAKE FILESYSTEM
 
 =============================================================================
 */
-
-int com_filesize;
-
 
 //
 // in memory
@@ -1497,7 +1426,7 @@ COM_WriteFile(const char *filename, const void *data, int len)
     FILE *f;
     char name[MAX_OSPATH];
 
-    snprintf(name, sizeof(name), "%s/%s", com_gamedir, filename);
+    qsnprintf(name, sizeof(name), "%s/%s", com_gamedir, filename);
 
     f = fopen(name, "wb");
     if (!f) {
@@ -1542,13 +1471,10 @@ COM_CreatePath(const char *path)
 COM_FOpenFile
 
 Finds the file in the search path.
-Sets com_filesize
 If the requested file is inside a packfile, a new FILE * will be opened
 into the file.
 ===========
 */
-int file_from_pak;	// global indicating file came from pack file
-
 int
 COM_FOpenFile(const char *filename, FILE **file)
 {
@@ -1557,8 +1483,6 @@ COM_FOpenFile(const char *filename, FILE **file)
     pack_t *pak;
     int i;
     int findtime;
-
-    file_from_pak = 0;
 
 //
 // search through the path, one element at a time
@@ -1575,9 +1499,7 @@ COM_FOpenFile(const char *filename, FILE **file)
 		    if (!*file)
 			Sys_Error("Couldn't reopen %s", pak->filename);
 		    fseek(*file, pak->files[i].filepos, SEEK_SET);
-		    com_filesize = pak->files[i].filelen;
-		    file_from_pak = 1;
-		    return com_filesize;
+		    return pak->files[i].filelen;
 		}
 	} else {
 	    // check a file in the directory tree
@@ -1586,62 +1508,56 @@ COM_FOpenFile(const char *filename, FILE **file)
 		if (strchr(filename, '/') || strchr(filename, '\\'))
 		    continue;
 	    }
-	    snprintf(path, sizeof(path), "%s/%s", search->filename, filename);
+	    qsnprintf(path, sizeof(path), "%s/%s", search->filename, filename);
 	    findtime = Sys_FileTime(path);
 	    if (findtime == -1)
 		continue;
 
 	    *file = fopen(path, "rb");
-	    com_filesize = COM_filelength(*file);
-	    return com_filesize;
+	    return COM_filelength(*file);
 	}
     }
-
-    Sys_Printf("FindFile: can't find %s\n", filename);
     *file = NULL;
-    com_filesize = -1;
 
     return -1;
 }
 
 static void
-COM_ScanDirDir(struct stree_root *root, DIR *dir, const char *pfx,
-	       const char *ext, qboolean stripext)
+COM_ScanDirDir(struct stree_root *root, DIR *dir,
+	       const char *prefix, const char *suffix, qboolean strip)
 {
-    int pfx_len, ext_len;
+    int prefix_len, suffix_len;
     struct dirent *d;
     char *fname;
 
-    pfx_len = pfx ? strlen(pfx) : 0;
-    ext_len = ext ? strlen(ext) : 0;
+    prefix_len = prefix ? strlen(prefix) : 0;
+    suffix_len = suffix ? strlen(suffix) : 0;
 
     while ((d = readdir(dir))) {
-	if ((!pfx || !strncasecmp(d->d_name, pfx, pfx_len)) &&
-	    (!ext || COM_CheckExtension(d->d_name, ext))) {
-	    int len = strlen(d->d_name);
-	    if (ext && stripext)
-		len -= ext_len;
-	    fname = Z_Malloc(len + 1);
-	    if (fname) {
-		strncpy(fname, d->d_name, len);
-		fname[len] = '\0';
-		STree_InsertAlloc(root, fname, true);
-		Z_Free(fname);
-	    }
-	}
+	if (prefix && prefix_len && strncasecmp(d->d_name, prefix, prefix_len))
+	    continue;
+	if (suffix && suffix_len && !COM_CheckSuffix(d->d_name, suffix))
+	    continue;
+
+	int len = strlen(d->d_name);
+	if (suffix && strip)
+	    len -= suffix_len;
+	fname = Z_StrnDup(d->d_name, len);
+	STree_InsertAlloc(root, fname, true);
+	Z_Free(fname);
     }
 }
 
 static void
 COM_ScanDirPak(struct stree_root *root, pack_t *pak, const char *path,
-	       const char *pfx, const char *ext, qboolean stripext)
+	       const char *prefix, const char *suffix, qboolean strip)
 {
-    int i, path_len, pfx_len, ext_len, len;
+    int i, path_len, prefix_len, suffix_len, len;
     char *pak_f, *fname;
 
     path_len = path ? strlen(path) : 0;
-    pfx_len = pfx ? strlen(pfx) : 0;
-    ext_len = ext ? strlen(ext) : 0;
+    prefix_len = prefix ? strlen(prefix) : 0;
+    suffix_len = suffix ? strlen(suffix) : 0;
 
     for (i = 0; i < pak->numfiles; i++) {
 	/* Check the path prefix */
@@ -1658,23 +1574,19 @@ COM_ScanDirPak(struct stree_root *root, pack_t *pak, const char *path,
 	if (strchr(pak_f, '/'))
 	    continue;
 
-	/* Check the prefix and extension, if set */
-	if (pfx && pfx_len && strncasecmp(pak_f, pfx, pfx_len))
+	/* Check the prefix and suffix, if set */
+	if (prefix && prefix_len && strncasecmp(pak_f, prefix, prefix_len))
 	    continue;
-	if (ext && ext_len && !COM_CheckExtension(pak_f, ext))
+	if (suffix && suffix_len && !COM_CheckSuffix(pak_f, suffix))
 	    continue;
 
 	/* Ok, we have a match. Add it */
 	len = strlen(pak_f);
-	if (ext && stripext)
-	    len -= ext_len;
-	fname = Z_Malloc(len + 1);
-	if (fname) {
-	    strncpy(fname, pak_f, len);
-	    fname[len] = '\0';
-	    STree_InsertAlloc(root, fname, true);
-	    Z_Free(fname);
-	}
+	if (suffix && strip)
+	    len -= suffix_len;
+	fname = Z_StrnDup(pak_f, len);
+	STree_InsertAlloc(root, fname, true);
+	Z_Free(fname);
     }
 }
 
@@ -1683,13 +1595,13 @@ COM_ScanDirPak(struct stree_root *root, pack_t *pak, const char *path,
 COM_ScanDir
 
 Scan the contents of a the given directory. Any filenames that match
-both the given prefix and extension are added to the string tree.
+both the given prefix and suffix are added to the string tree.
 Caller MUST have already called STree_AllocInit()
 ============
 */
 void
-COM_ScanDir(struct stree_root *root, const char *path, const char *pfx,
-	    const char *ext, qboolean stripext)
+COM_ScanDir(struct stree_root *root, const char *path,
+            const char *prefix, const char *suffix, qboolean strip)
 {
     searchpath_t *search;
     char fullpath[MAX_OSPATH];
@@ -1697,117 +1609,111 @@ COM_ScanDir(struct stree_root *root, const char *path, const char *pfx,
 
     for (search = com_searchpaths; search; search = search->next) {
 	if (search->pack) {
-	    COM_ScanDirPak(root, search->pack, path, pfx, ext, stripext);
+	    COM_ScanDirPak(root, search->pack, path, prefix, suffix, strip);
 	} else {
-	    snprintf(fullpath, MAX_OSPATH, "%s/%s", search->filename, path);
+	    qsnprintf(fullpath, sizeof(fullpath), "%s/%s", search->filename, path);
 	    fullpath[MAX_OSPATH - 1] = '\0';
 	    dir = opendir(fullpath);
 	    if (dir) {
-		COM_ScanDirDir(root, dir, pfx, ext, stripext);
+		COM_ScanDirDir(root, dir, prefix, suffix, strip);
 		closedir(dir);
 	    }
 	}
     }
 }
 
-/*
-============
-COM_LoadFile
-
-Filename are reletive to the quake directory.
-Optionally return length; set null if you don't want it.
-Always appends a 0 byte to the loaded data.
-============
-*/
-static cache_user_t *loadcache;
-static byte *loadbuf;
-static int loadsize;
-
-static void *
-COM_LoadFile(const char *path, int usehunk, size_t *size)
+static void
+COM_ReadFileAndClose(byte *buffer, size_t filesize, FILE *f)
 {
-    FILE *f;
-    byte *buf;
-    char base[32];
-    int len;
-
-    buf = NULL;			// quiet compiler warning
-
-// look for it in the filesystem or pack files
-    len = com_filesize = COM_FOpenFile(path, &f);
-    if (!f)
-	return NULL;
-
-    if (size)
-	*size = len;
-
-// extract the filename base name for hunk tag
-    COM_FileBase(path, base, sizeof(base));
-
-    if (usehunk == 1)
-	buf = Hunk_AllocName(len + 1, base);
-    else if (usehunk == 2)
-	buf = Hunk_TempAlloc(len + 1);
-    else if (usehunk == 0)
-	buf = Z_Malloc(len + 1);
-    else if (usehunk == 3)
-	buf = Cache_Alloc(loadcache, len + 1, base);
-    else if (usehunk == 4) {
-	if (len + 1 > loadsize)
-	    buf = Hunk_TempAlloc(len + 1);
-	else
-	    buf = loadbuf;
-    } else
-	Sys_Error("%s: bad usehunk", __func__);
-
-    if (!buf)
-	Sys_Error("%s: not enough space for %s", __func__, path);
-
-    buf[len] = 0;
-
 #ifndef SERVERONLY
     Draw_BeginDisc();
 #endif
-    fread(buf, 1, len, f);
+    fread(buffer, 1, filesize, f);
     fclose(f);
 #ifndef SERVERONLY
     Draw_EndDisc();
 #endif
-
-    return buf;
 }
 
 void *
-COM_LoadHunkFile(const char *path)
+COM_LoadHunkFile(const char *path, size_t *size)
 {
-    return COM_LoadFile(path, 1, NULL);
+    FILE *f;
+    byte *buffer;
+    size_t filesize;
+    char hunkname[HUNK_NAMELEN + 1];
+
+    filesize = COM_FOpenFile(path, &f);
+    if (!f)
+        return NULL;
+    if (size)
+        *size = filesize;
+
+    COM_FileBase(path, hunkname, sizeof(hunkname));
+    buffer = Hunk_AllocName(filesize + 1, hunkname);
+    COM_ReadFileAndClose(buffer, filesize, f);
+    buffer[filesize] = 0;
+
+    return buffer;
 }
 
 void *
-COM_LoadTempFile(const char *path)
+COM_LoadTempFile(const char *path, size_t *size)
 {
-    return COM_LoadFile(path, 2, NULL);
+    FILE *f;
+    byte *buffer;
+    size_t filesize;
+
+    filesize = COM_FOpenFile(path, &f);
+    if (!f)
+        return NULL;
+    if (size)
+        *size = filesize;
+
+    buffer = Hunk_TempAlloc(filesize + 1);
+    COM_ReadFileAndClose(buffer, filesize, f);
+    buffer[filesize] = 0;
+
+    return buffer;
 }
 
 void
-COM_LoadCacheFile(const char *path, struct cache_user_s *cu)
+COM_LoadCacheFile(const char *path, struct cache_user_s *cache)
 {
-    loadcache = cu;
-    COM_LoadFile(path, 3, NULL);
+    FILE *f;
+    byte *buffer;
+    size_t filesize;
+
+    filesize = COM_FOpenFile(path, &f);
+    if (!filesize)
+        Sys_Error("%s: Unable to load %s\n", __func__, path);
+
+    buffer = Cache_Alloc(cache, filesize + 1, path);
+    COM_ReadFileAndClose(buffer, filesize, f);
+    buffer[filesize] = 0;
 }
 
 // uses temp hunk if larger than bufsize
 // size is size of loaded file in bytes
 void *
-COM_LoadStackFile(const char *path, void *buffer, int bufsize, size_t *size)
+COM_LoadStackFile(const char *path, void *buffer, size_t buffersize, size_t *size)
 {
-    byte *buf;
+    FILE *f;
+    byte *bytebuffer;
+    size_t filesize;
 
-    loadbuf = (byte *)buffer;
-    loadsize = bufsize;
-    buf = COM_LoadFile(path, 4, size);
+    filesize = COM_FOpenFile(path, &f);
+    if (!f)
+        return NULL;
+    if (size)
+        *size = filesize;
 
-    return buf;
+    /* Fall back to temp allocation if too large */
+    bytebuffer = (buffersize < filesize + 1) ? Hunk_TempAlloc(filesize + 1) : buffer;
+    COM_ReadFileAndClose(bytebuffer, filesize, f);
+    bytebuffer[filesize] = 0;
+
+    return bytebuffer;
 }
 
 /*
@@ -1879,20 +1785,20 @@ COM_LoadPackFile(const char *packfile)
 
     /* parse the directory */
     for (i = 0; i < numfiles; i++) {
-	snprintf(mfiles[i].name, sizeof(mfiles[i].name), "%s", dfiles[i].name);
+	qsnprintf(mfiles[i].name, sizeof(mfiles[i].name), "%s", dfiles[i].name);
 	mfiles[i].filepos = LittleLong(dfiles[i].filepos);
 	mfiles[i].filelen = LittleLong(dfiles[i].filelen);
     }
 
 #ifdef NQ_HACK
     Hunk_FreeToLowMark(mark);
-    pack = Hunk_Alloc(sizeof(pack_t));
+    pack = Hunk_AllocName(sizeof(pack_t), "pakheadr");
 #endif
 #ifdef QW_HACK
     Z_Free(dfiles);
     pack = Z_Malloc(sizeof(pack_t));
 #endif
-    snprintf(pack->filename, sizeof(pack->filename), "%s", packfile);
+    qsnprintf(pack->filename, sizeof(pack->filename), "%s", packfile);
     pack->numfiles = numfiles;
     pack->files = mfiles;
 
@@ -1933,7 +1839,7 @@ COM_AddGameDirectory(const char *base, const char *dir)
 //
 // add the directory to the search path
 //
-    search = Hunk_Alloc(sizeof(searchpath_t));
+    search = Hunk_AllocName(sizeof(searchpath_t), "gamedir");
     strcpy(search->filename, com_gamedir);
     search->next = com_searchpaths;
     com_searchpaths = search;
@@ -1942,11 +1848,11 @@ COM_AddGameDirectory(const char *base, const char *dir)
 // add any pak files in the format pak0.pak pak1.pak, ...
 //
     for (i = 0;; i++) {
-	snprintf(pakfile, sizeof(pakfile), "%s/pak%i.pak", com_gamedir, i);
+	qsnprintf(pakfile, sizeof(pakfile), "%s/pak%i.pak", com_gamedir, i);
 	pak = COM_LoadPackFile(pakfile);
 	if (!pak)
 	    break;
-	search = Hunk_Alloc(sizeof(searchpath_t));
+	search = Hunk_AllocName(sizeof(searchpath_t), "gamedir");
 	search->pack = pak;
 	search->next = com_searchpaths;
 	com_searchpaths = search;
@@ -2002,7 +1908,7 @@ COM_Gamedir(const char *dir)
     if (!strcmp(dir, "id1") || !strcmp(dir, "qw"))
 	return;
 
-    snprintf(com_gamedir, sizeof(com_gamedir), "%s/%s", com_basedir, dir);
+    qsnprintf(com_gamedir, sizeof(com_gamedir), "%s/%s", com_basedir, dir);
 
     //
     // add the directory to the search path
@@ -2016,7 +1922,7 @@ COM_Gamedir(const char *dir)
     // add any pak files in the format pak0.pak pak1.pak, ...
     //
     for (i = 0;; i++) {
-	snprintf(pakfile, sizeof(pakfile), "%s/pak%i.pak", com_gamedir, i);
+	qsnprintf(pakfile, sizeof(pakfile), "%s/pak%i.pak", com_gamedir, i);
 	pak = COM_LoadPackFile(pakfile);
 	if (!pak)
 	    break;
@@ -2110,7 +2016,7 @@ COM_InitFilesystem(void)
 		|| com_argv[i][0] == '-')
 		break;
 
-	    search = Hunk_Alloc(sizeof(searchpath_t));
+	    search = Hunk_AllocName(sizeof(searchpath_t), "gamedir");
 	    if (!strcmp(COM_FileExtension(com_argv[i]), "pak")) {
 		search->pack = COM_LoadPackFile(com_argv[i]);
 		if (!search->pack)
@@ -2127,6 +2033,67 @@ COM_InitFilesystem(void)
     com_base_searchpaths = com_searchpaths;
 #endif
 }
+
+/*
+ * =====================================================================
+ * Entity Key/Value Parsing
+ * =====================================================================
+ */
+
+/*
+ * Find the value for the given key and write it into the given buffer.
+ * Returns a pointer to the buffer if found, NULL otherwise.
+ */
+char *
+Entity_ValueForKey(const char *string, const char *key, char *buffer, int buflen)
+{
+    assert(buflen > 0);
+
+    buffer[0] = 0;
+
+    /* Ensure we actually find the start of the entity */
+    if (!string)
+        return NULL;
+    string = COM_Parse(string);
+    if (!string)
+        return NULL;
+    if (com_token[0] != '{')
+        return NULL;
+
+    /* Parse the keys until we find the one we want */
+    while (1) {
+        string = COM_Parse(string);
+        if (!string)
+            break;
+        if (com_token[0] == '}')
+            break;
+
+        /*
+         * Clean the key by excluding a leading underscore and
+         * removing trailing whitespace.
+         */
+        const char *cur = (com_token[0] == '_') ? com_token + 1 : com_token;
+        const char *end = cur + strlen(cur) - 1;
+        while (*end == ' ')
+            end--;
+
+        /* If the key doesn't match, discard the value and continue */
+        if (strncmp(cur, key, cur - end + 1)) {
+            string = COM_Parse(string);
+            if (!string)
+                return NULL;
+            continue;
+        }
+
+        /* Key matches - copy the value into the buffer and return */
+        string = COM_Parse(string);
+        qstrncpy(buffer, com_token, buflen);
+        return buffer;
+    }
+
+    return NULL;
+}
+
 
 // FIXME - everything below is QW only... move it?
 #ifdef QW_HACK
@@ -2337,7 +2304,7 @@ Info_SetValueForStarKey(char *infostring, const char *key, const char *value,
     if (!value || !strlen(value))
 	return;
 
-    len = snprintf(buffer, sizeof(buffer), "\\%s\\%s", key, value);
+    len = qsnprintf(buffer, sizeof(buffer), "\\%s\\%s", key, value);
     if (len > sizeof(buffer) - 1)
 	goto ErrTooLong;
 
@@ -2529,44 +2496,4 @@ COM_BlockSequenceCRCByte(const byte *base, int length, int sequence)
     return crc;
 }
 
-// char *date = "Oct 24 1996";
-static const char *date = __DATE__;
-static const char *mon[12] =
-    { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
-    "Nov", "Dec"
-};
-static char mond[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
-
-// returns days since Oct 24 1996
-int
-build_number(void)
-{
-    int m = 0;
-    int d = 0;
-    int y = 0;
-    static int b = 0;
-
-    if (b != 0)
-	return b;
-
-    for (m = 0; m < 11; m++) {
-	if (strncasecmp(&date[0], mon[m], 3) == 0)
-	    break;
-	d += mond[m];
-    }
-
-    d += atoi(&date[4]) - 1;
-
-    y = atoi(&date[7]) - 1900;
-
-    b = d + (int)((y - 1) * 365.25);
-
-    if (((y % 4) == 0) && m > 1) {
-	b += 1;
-    }
-
-    b -= 35778;			// Dec 16 1998
-
-    return b;
-}
 #endif /* QW_HACK */

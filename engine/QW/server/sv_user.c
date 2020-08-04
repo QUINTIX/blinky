@@ -635,7 +635,7 @@ SV_BeginDownload_f(client_t *client)
     char name[MAX_OSPATH], *p;
 
     /* Lowercase name (needed for casesen file systems) */
-    snprintf(name, sizeof(name), "%s", Cmd_Argv(1));
+    qsnprintf(name, sizeof(name), "%s", Cmd_Argv(1));
     for (p = name; *p; p++)
 	*p = tolower(*p);
 

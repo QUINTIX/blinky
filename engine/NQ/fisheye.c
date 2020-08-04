@@ -274,6 +274,7 @@ LUA DETAILS
 #include "screen.h"
 #include "sys.h"
 #include "view.h"
+#include "pcx.h"
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -1227,7 +1228,7 @@ static void init_lua(void)
    // open Lua standard libraries
    luaL_openlibs(lua);
 
-   char *aliases = 
+   char aliases[] = 
       "cos = math.cos\n"
       "sin = math.sin\n"
       "tan = math.tan\n"
@@ -1385,6 +1386,7 @@ static qboolean calc_zoom(void)
    return true;
 }
 
+// TODO: excise any and all references to PCX; use external library for png instead
 // -------------------------------------------------------------------------------- 
 // |                                                                              |
 // |                           GLOBE SAVER FUNCTIONS                              |
@@ -1405,7 +1407,7 @@ static void WritePCXplate(char *filename, int plate_index, int with_margins)
 
     int i, j, length;
     pcx_t *pcx;
-    byte *pack;
+    unsigned char* pack;
 
     pcx = Hunk_TempAlloc(width * height * 2 + 1000);
     if (pcx == NULL) {
@@ -1413,7 +1415,6 @@ static void WritePCXplate(char *filename, int plate_index, int with_margins)
 	return;
     }
 
-    pcx->manufacturer = 0x0a;	// PCX id
     pcx->version = 5;		// 256 color
     pcx->encoding = 1;		// uncompressed
     pcx->bits_per_pixel = 8;	// 256 color
@@ -1427,7 +1428,6 @@ static void WritePCXplate(char *filename, int plate_index, int with_margins)
     pcx->color_planes = 1;	// chunky image
     pcx->bytes_per_line = LittleShort((short)width);
     pcx->palette_type = LittleShort(2);	// not a grey scale
-    memset(pcx->filler, 0, sizeof(pcx->filler));
 
 // pack the image
     pack = &pcx->data;
@@ -1475,7 +1475,7 @@ static void save_globe(void)
 
    for (i=0; i<globe.numplates; ++i) 
    {
-      snprintf(pcxname, 32, "%s%d.pcx", globe.save.name, i);
+      qsnprintf(pcxname, 32, "%s%d.pcx", globe.save.name, i);
       WritePCXplate(pcxname, i, globe.save.with_margins);
 
     Con_Printf("Wrote %s\n", pcxname);

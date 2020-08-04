@@ -63,15 +63,15 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #define	ON_EPSILON	0.1	// point on plane side epsilon
 
-#define	MAX_MSGLEN	32768	// max length of a reliable message
-#define	MAX_DATAGRAM	32768	// max length of unreliable message
-				// (driver MTU may be lower)
+#define	MAX_MSGLEN   (1 << 18)  // max length of a reliable message
+#define	MAX_DATAGRAM (1 << 18)  // max length of unreliable message
+                                // (driver MTU may be lower)
 
 //
 // per-level limits
 //
 //#define       MAX_EDICTS      600     // FIXME: ouch! ouch! ouch!
-#define	MAX_EDICTS	4096	// FIXME: Arbitrary increase, make dynamic?
+#define	MAX_EDICTS	8192	// FIXME: Arbitrary increase, make dynamic?
 #define	MAX_LIGHTSTYLES	64
 /*
  * Model and sound limits depend on the net protocol version being used
@@ -189,6 +189,7 @@ typedef struct {
     int colormap;
     int skinnum;
     int effects;
+    byte alpha;
 } entity_state_t;
 
 

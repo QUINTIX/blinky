@@ -171,8 +171,7 @@ void
 Cvar_Set(const char *var_name, const char *value)
 {
     cvar_t *var;
-    char *newstring;
-    qboolean changed;
+    qboolean changed = false;
 
     var = Cvar_FindVar(var_name);
     if (!var) {
@@ -186,38 +185,37 @@ Cvar_Set(const char *var_name, const char *value)
 	return;
     }
 
-    changed = strcmp(var->string, value);
+    if (var->string) {
+	changed = strcmp(var->string, value);
 
-    /* Check for developer-only cvar */
-    if (changed && (var->flags & CVAR_DEVELOPER) && !developer.value) {
-	Con_Printf("%s is settable only in developer mode.\n", var_name);
-	return;
-    }
+	/* Check for developer-only cvar */
+	if (changed && (var->flags & CVAR_DEVELOPER) && !developer.value) {
+	    Con_Printf("%s is settable only in developer mode.\n", var_name);
+	    return;
+	}
 
 #ifdef SERVERONLY
-    if (var->info) {
-	Info_SetValueForKey(svs.info, var_name, value, MAX_SERVERINFO_STRING);
-	SV_SendServerInfoChange(var_name, value);
-//              SV_BroadcastCommand ("fullserverinfo \"%s\"\n", svs.info);
-    }
+	if (var->info) {
+	    Info_SetValueForKey(svs.info, var_name, value, MAX_SERVERINFO_STRING);
+	    SV_SendServerInfoChange(var_name, value);
+	}
 #else
 #ifdef QW_HACK
-    if (var->info) {
-	Info_SetValueForKey(cls.userinfo, var_name, value, MAX_INFO_STRING);
-	if (cls.state >= ca_connected) {
-	    MSG_WriteByte(&cls.netchan.message, clc_stringcmd);
-	    MSG_WriteStringf(&cls.netchan.message, "setinfo \"%s\" \"%s\"\n",
-			     var_name, value);
+	if (var->info) {
+	    Info_SetValueForKey(cls.userinfo, var_name, value, MAX_INFO_STRING);
+	    if (cls.state >= ca_connected) {
+		MSG_WriteByte(&cls.netchan.message, clc_stringcmd);
+		MSG_WriteStringf(&cls.netchan.message, "setinfo \"%s\" \"%s\"\n",
+				 var_name, value);
+	    }
 	}
+#endif
+#endif
+
+	Z_Free(var->string);
     }
-#endif
-#endif
 
-    Z_Free(var->string);	// free the old value string
-
-    newstring = Z_Malloc(strlen(value) + 1);
-    strcpy(newstring, value);
-    var->string = newstring;
+    var->string = Z_StrDup(value);
     var->value = Q_atof(var->string);
 
 #ifdef NQ_HACK
@@ -250,7 +248,7 @@ Cvar_SetValue(const char *var_name, float value)
 {
     char val[32];
 
-    snprintf(val, sizeof(val), "%f", value);
+    qsnprintf(val, sizeof(val), "%f", value);
     Cvar_Set(var_name, val);
 }
 
@@ -265,7 +263,7 @@ Adds a freestanding variable to the variable list.
 void
 Cvar_RegisterVariable(cvar_t *variable)
 {
-    char value[512];		// FIXME - magic numbers...
+    const char *initial_string;
     float old_developer;
 
     /* first check to see if it has already been defined */
@@ -284,11 +282,6 @@ Cvar_RegisterVariable(cvar_t *variable)
     variable->stree.string = variable->name;
     STree_Insert(&cvar_tree, &variable->stree);
 
-// copy the value off, because future sets will Z_Free it
-    strncpy(value, variable->string, 511);
-    value[511] = '\0';
-    variable->string = Z_Malloc(1);
-
     /*
      * FIXME (BARF) - readonly cvars need to be initialised
      *                developer 1 allows set
@@ -296,7 +289,12 @@ Cvar_RegisterVariable(cvar_t *variable)
     /* set it through the function to be consistant */
     old_developer = developer.value;
     developer.value = 1;
-    Cvar_Set(variable->name, value);
+
+    /* The string will be Z_Free/Zalloc'd, so zero the pointer first */
+    initial_string = variable->string;
+    variable->string = NULL;
+    Cvar_Set(variable->name, initial_string);
+
     developer.value = old_developer;
 }
 
@@ -336,18 +334,18 @@ Cvar_Command(void)
 Cvar_WriteVariables
 
 Writes lines containing "set variable value" for all variables
-with the archive flag set to true.
+with the given flags set.
 ============
 */
 void
-Cvar_WriteVariables(FILE *f)
+Cvar_WriteVariables(FILE *f, uint32_t flags)
 {
     cvar_t *var;
     struct stree_node *n;
 
     STree_ForEach(&cvar_tree, n) {
 	var = cvar_entry(n);
-	if (var->archive)
+	if (var->flags & flags)
 	    fprintf(f, "%s \"%s\"\n", var->name, var->string);
     }
 }

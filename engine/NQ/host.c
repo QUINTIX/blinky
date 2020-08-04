@@ -19,6 +19,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 // host.c -- coordinates spawning and killing of local servers
 
+#include "buildinfo.h"
 #include "cdaudio.h"
 #include "cmd.h"
 #include "console.h"
@@ -79,6 +80,7 @@ static jmp_buf host_abort;
 
 byte *host_basepal;
 byte *host_colormap;
+byte **host_transtables;
 
 cvar_t host_framerate = { "host_framerate", "0" };	// set for slow motion
 cvar_t host_speeds = { "host_speeds", "0" };	// set for running times
@@ -86,12 +88,12 @@ cvar_t host_speeds = { "host_speeds", "0" };	// set for running times
 cvar_t sys_ticrate = { "sys_ticrate", "0.05" };
 cvar_t serverprofile = { "serverprofile", "0" };
 
-cvar_t fraglimit = { "fraglimit", "0", false, true };
-cvar_t timelimit = { "timelimit", "0", false, true };
-cvar_t teamplay = { "teamplay", "0", false, true };
+cvar_t fraglimit = { "fraglimit", "0", .server = true };
+cvar_t timelimit = { "timelimit", "0", .server = true };
+cvar_t teamplay = { "teamplay", "0", .server = true };
 
 cvar_t samelevel = { "samelevel", "0" };
-cvar_t noexit = { "noexit", "0", false, true };
+cvar_t noexit = { "noexit", "0", .server = true };
 
 cvar_t developer = { "developer", "0" };
 
@@ -116,7 +118,7 @@ Host_EndGame(const char *message, ...)
     char string[MAX_PRINTMSG];
 
     va_start(argptr, message);
-    vsnprintf(string, sizeof(string), message, argptr);
+    qvsnprintf(string, sizeof(string), message, argptr);
     va_end(argptr);
     Con_DPrintf("%s: %s\n", __func__, string);
 
@@ -155,7 +157,7 @@ Host_Error(const char *error, ...)
     SCR_EndLoadingPlaque();	// reenable screen updates
 
     va_start(argptr, error);
-    vsnprintf(string, sizeof(string), error, argptr);
+    qvsnprintf(string, sizeof(string), error, argptr);
     va_end(argptr);
     Con_Printf("%s: %s\n", __func__, string);
 
@@ -271,23 +273,27 @@ Writes key bindings and archived cvars to config.cfg
 void
 Host_WriteConfiguration(void)
 {
-    FILE *f;
+    FILE *configFile;
 
 // dedicated servers initialize the host but don't parse and set the
 // config.cfg cvars
     if (host_initialized & !isDedicated) {
-	f = fopen(va("%s/config.cfg", com_gamedir), "w");
-	if (!f) {
+	configFile = fopen(va("%s/config.cfg", com_gamedir), "w");
+        if (configFile) {
+            Key_WriteBindings(configFile);
+            Cvar_WriteVariables(configFile, CVAR_CONFIG | CVAR_VIDEO);
+            fclose(configFile);
+        } else {
 	    Con_Printf("Couldn't write config.cfg.\n");
-	    return;
-	}
+        }
 
-	Key_WriteBindings(f);
-	Cvar_WriteVariables(f);
-
-	F_WriteConfig(f);
-
-	fclose(f);
+        configFile = fopen(va("%s/video.cfg", com_gamedir), "w");
+        if (configFile) {
+            Cvar_WriteVariables(configFile, CVAR_VIDEO);
+            fclose(configFile);
+        } else {
+	    Con_Printf("Couldn't write video.cfg.\n");
+        }
     }
 }
 
@@ -819,24 +825,24 @@ Host_Init(quakeparms_t *parms)
     Con_Init();
     M_Init();
     PR_Init();
-    Mod_Init(R_ModelLoader());
+    Mod_Init(R_AliasModelLoader(), R_BrushModelLoader());
     NET_Init();
     SV_Init();
 
-    Con_Printf("Exe: " __TIME__ " " __DATE__ "\n");
+    Con_Printf("Exe: %s\n", Build_DateString());
     Con_Printf("%4.1f megabyte heap\n", parms->memsize / (1024 * 1024.0));
 
     R_InitTextures();		// needed even for dedicated servers
 
     if (cls.state != ca_dedicated) {
-	host_basepal = COM_LoadHunkFile("gfx/palette.lmp");
+	host_basepal = COM_LoadHunkFile("gfx/palette.lmp", NULL);
 	if (!host_basepal)
 	    Sys_Error("Couldn't load gfx/palette.lmp");
-	host_colormap = COM_LoadHunkFile("gfx/colormap.lmp");
+	host_colormap = COM_LoadHunkFile("gfx/colormap.lmp", NULL);
 	if (!host_colormap)
 	    Sys_Error("Couldn't load gfx/colormap.lmp");
 
-	VID_Init(host_basepal);
+        VID_Init(host_basepal);
 
 	Draw_Init();
 	SCR_Init();
@@ -853,6 +859,9 @@ Host_Init(quakeparms_t *parms)
 	F_Init();
     }
     Mod_InitAliasCache();
+
+    Con_Printf("Initializing alpha palettes...\n");
+    Alpha_Init();
 
     Hunk_AllocName(0, "-HOST_HUNKLEVEL-");
     host_hunklevel = Hunk_LowMark();

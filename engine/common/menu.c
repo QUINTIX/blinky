@@ -118,7 +118,13 @@ static qboolean m_recursiveDraw;
 void
 M_DrawCharacter(int cx, int line, int num)
 {
-    Draw_Character(cx + ((vid.width - 320) >> 1), line, num);
+    Draw_Character(cx + ((scr_scaled_width - 320) >> 1), line, num);
+}
+
+void
+M_DrawCursor(int cx, int line, int num)
+{
+    M_DrawCharacter(cx, line, num + ((int)(realtime * 4) & 1));
 }
 
 void
@@ -141,16 +147,16 @@ M_PrintWhite(int cx, int cy, const char *str)
     }
 }
 
-static void
+void
 M_DrawTransPic(int x, int y, const qpic8_t *pic)
 {
-    Draw_TransPic(x + ((vid.width - 320) >> 1), y, pic);
+    Draw_TransPic(x + ((scr_scaled_width - 320) >> 1), y, pic, TRANSPARENT_COLOR);
 }
 
 void
 M_DrawPic(int x, int y, const qpic8_t *pic)
 {
-    Draw_Pic(x + ((vid.width - 320) >> 1), y, pic);
+    Draw_Pic(x + ((scr_scaled_width - 320) >> 1), y, pic);
 }
 
 void
@@ -205,44 +211,6 @@ M_DrawTextBox(int x, int y, int width, int lines)
     M_DrawTransPic(cx, cy + 8, p);
 }
 
-#ifdef NQ_HACK
-static byte identityTable[256];
-static byte translationTable[256];
-
-static void
-M_BuildTranslationTable(int top, int bottom)
-{
-    int j;
-    byte *dest, *source;
-
-    for (j = 0; j < 256; j++)
-	identityTable[j] = j;
-    dest = translationTable;
-    source = identityTable;
-    memcpy(dest, source, 256);
-
-    /* the artists made some backwards ranges */
-    if (top < 128)
-	memcpy(dest + TOP_RANGE, source + top, 16);
-    else
-	for (j = 0; j < 16; j++)
-	    dest[TOP_RANGE + j] = source[top + 15 - j];
-
-    if (bottom < 128)
-	memcpy(dest + BOTTOM_RANGE, source + bottom, 16);
-    else
-	for (j = 0; j < 16; j++)
-	    dest[BOTTOM_RANGE + j] = source[bottom + 15 - j];
-}
-
-static void
-M_DrawTransPicTranslate(int x, int y, const qpic8_t *pic)
-{
-    Draw_TransPicTranslate(x + ((vid.width - 320) >> 1), y, pic,
-			   translationTable);
-}
-#endif /* NQ_HACK */
-
 /* --------------------------------------------------------------------------*/
 
 static int m_save_demonum;
@@ -251,6 +219,9 @@ static int m_save_demonum;
 enum {
     m_none, m_main, m_options, m_video, m_keys, m_quit
 } m_state;
+#endif
+#ifdef NQ_HACK
+m_state_t m_state;
 #endif
 
 /*
@@ -327,7 +298,7 @@ M_Main_Draw(void)
 
     M_DrawTransPic(16, 4, Draw_CachePic("gfx/qplaque.lmp"));
     pic = Draw_CachePic("gfx/ttl_main.lmp");
-    M_DrawPic((320 - pic->width) / 2, 4, pic);
+    M_DrawTransPic((320 - pic->width) / 2, 4, pic);
     M_DrawTransPic(72, 32, Draw_CachePic("gfx/mainmenu.lmp"));
 
     flash = (int)(realtime * 10) % 6;
@@ -537,7 +508,7 @@ M_Options_Draw(void)
 
     M_DrawTransPic(16, 4, Draw_CachePic("gfx/qplaque.lmp"));
     pic = Draw_CachePic("gfx/p_option.lmp");
-    M_DrawPic((320 - pic->width) / 2, 4, pic);
+    M_DrawTransPic((320 - pic->width) / 2, 4, pic);
 
     M_Print(16, height = 32, "    Customize controls");
     M_Print(16, height += 8, "         Go to console");
@@ -591,9 +562,7 @@ M_Options_Draw(void)
     M_Print(16, height += 8, "             Use Mouse");
     M_DrawCheckbox(220, height, _windowed_mouse.value);
 
-    /* cursor */
-    M_DrawCharacter(200, 32 + m_options_cursor * 8,
-		    12 + ((int)(realtime * 4) & 1));
+    M_DrawCursor(200, 32 + m_options_cursor * 8, 12);
 }
 
 static void
@@ -761,7 +730,7 @@ M_Keys_Draw(void)
     m_keys_cursor_t line;
 
     pic = Draw_CachePic("gfx/ttl_cstm.lmp");
-    M_DrawPic((320 - pic->width) / 2, 4, pic);
+    M_DrawTransPic((320 - pic->width) / 2, 4, pic);
 
     /* Draw the key bindings list */
     for (line = 0; line < M_KEYS_CURSOR_LINES; line++) {
@@ -790,9 +759,8 @@ M_Keys_Draw(void)
 	M_Print(12, 32, "Press a key or button for this action");
 	M_DrawCharacter(130, 48 + m_keys_cursor * 8, '=');
     } else {
-	const int cursor_char = 12 + ((int)(realtime * 4) & 1);
 	M_Print(18, 32, "Enter to change, backspace to clear");
-	M_DrawCharacter(130, 48 + m_keys_cursor * 8, cursor_char);
+	M_DrawCursor(130, 48 + m_keys_cursor * 8, 12);
     }
 }
 
@@ -857,7 +825,7 @@ M_Menu_Video_f(void)
     key_dest = key_menu;
     m_state = m_video;
     m_entersound = true;
-    VID_MenuInitState(&modelist[vid_modenum]);
+    VID_MenuInitState(vid_currentmode);
 }
 
 static void
@@ -1199,7 +1167,7 @@ M_SinglePlayer_Draw(void)
 
     M_DrawTransPic(16, 4, Draw_CachePic("gfx/qplaque.lmp"));
     p = Draw_CachePic("gfx/ttl_sgl.lmp");
-    M_DrawPic((320 - p->width) / 2, 4, p);
+    M_DrawTransPic((320 - p->width) / 2, 4, p);
     M_DrawTransPic(72, 32, Draw_CachePic("gfx/sp_menu.lmp"));
 
     f = (int)(host_time * 10) % 6;
@@ -1276,16 +1244,16 @@ M_ScanSaves(void)
     int version;
 
     for (i = 0; i < MAX_SAVEGAMES; i++) {
-	snprintf(m_filenames[i], sizeof(m_filenames[i]), "--- UNUSED SLOT ---");
+	qsnprintf(m_filenames[i], sizeof(m_filenames[i]), "--- UNUSED SLOT ---");
 	loadable[i] = false;
-	snprintf(name, sizeof(name), "%s/s%i.sav", com_gamedir, i);
+	qsnprintf(name, sizeof(name), "%s/s%i.sav", com_gamedir, i);
 	f = fopen(name, "r");
 	if (!f)
 	    continue;
 
 	fscanf(f, "%i\n", &version);
 	fscanf(f, "%79s\n", name);
-	snprintf(m_filenames[i], sizeof(m_filenames[i]), "%s", name);
+	qsnprintf(m_filenames[i], sizeof(m_filenames[i]), "%s", name);
 
 	// change _ back to space
 	for (j = 0; j < SAVEGAME_COMMENT_LENGTH; j++)
@@ -1327,13 +1295,12 @@ M_Load_Draw(void)
     const qpic8_t *p;
 
     p = Draw_CachePic("gfx/p_load.lmp");
-    M_DrawPic((320 - p->width) / 2, 4, p);
+    M_DrawTransPic((320 - p->width) / 2, 4, p);
 
     for (i = 0; i < MAX_SAVEGAMES; i++)
 	M_Print(16, 32 + 8 * i, m_filenames[i]);
 
-// line cursor
-    M_DrawCharacter(8, 32 + load_cursor * 8, 12 + ((int)(realtime * 4) & 1));
+    M_DrawCursor(8, 32 + load_cursor * 8, 12);
 }
 
 static void
@@ -1343,13 +1310,12 @@ M_Save_Draw(void)
     const qpic8_t *p;
 
     p = Draw_CachePic("gfx/p_save.lmp");
-    M_DrawPic((320 - p->width) / 2, 4, p);
+    M_DrawTransPic((320 - p->width) / 2, 4, p);
 
     for (i = 0; i < MAX_SAVEGAMES; i++)
 	M_Print(16, 32 + 8 * i, m_filenames[i]);
 
-// line cursor
-    M_DrawCharacter(8, 32 + load_cursor * 8, 12 + ((int)(realtime * 4) & 1));
+    M_DrawCursor(8, 32 + load_cursor * 8, 12);
 }
 
 static void
@@ -1457,7 +1423,7 @@ M_MultiPlayer_Draw(void)
 
     M_DrawTransPic(16, 4, Draw_CachePic("gfx/qplaque.lmp"));
     p = Draw_CachePic("gfx/p_multi.lmp");
-    M_DrawPic((320 - p->width) / 2, 4, p);
+    M_DrawTransPic((320 - p->width) / 2, 4, p);
     M_DrawTransPic(72, 32, Draw_CachePic("gfx/mp_menu.lmp"));
 
     f = (int)(host_time * 10) % 6;
@@ -1526,6 +1492,15 @@ static int setup_oldbottom;
 static int setup_top;
 static int setup_bottom;
 
+#ifdef NQ_HACK
+static void
+M_DrawTransPicTranslate(int x, int y, const qpic8_t *pic)
+{
+    const byte *translation = R_GetTranslationTable(setup_top, setup_bottom);
+    Draw_TransPicTranslate(x + ((scr_scaled_width - 320) >> 1), y, pic, translation);
+}
+#endif /* NQ_HACK */
+
 #define	NUM_SETUP_CMDS	5
 
 static void
@@ -1547,7 +1522,7 @@ M_Setup_Draw(void)
 
     M_DrawTransPic(16, 4, Draw_CachePic("gfx/qplaque.lmp"));
     p = Draw_CachePic("gfx/p_multi.lmp");
-    M_DrawPic((320 - p->width) / 2, 4, p);
+    M_DrawTransPic((320 - p->width) / 2, 4, p);
 
     M_Print(64, 40, "Hostname");
     M_DrawTextBox(160, 32, 16, 1);
@@ -1566,21 +1541,15 @@ M_Setup_Draw(void)
     p = Draw_CachePic("gfx/bigbox.lmp");
     M_DrawTransPic(160, 64, p);
     p = Draw_CachePic("gfx/menuplyr.lmp");
-    M_BuildTranslationTable(setup_top * 16, setup_bottom * 16);
     M_DrawTransPicTranslate(172, 72, p);
 
-    M_DrawCharacter(56, setup_cursor_table[setup_cursor],
-		    12 + ((int)(realtime * 4) & 1));
+    M_DrawCursor(56, setup_cursor_table[setup_cursor], 12);
 
     if (setup_cursor == 0)
-	M_DrawCharacter(168 + 8 * strlen(setup_hostname),
-			setup_cursor_table[setup_cursor],
-			10 + ((int)(realtime * 4) & 1));
+	M_DrawCursor(168 + 8 * strlen(setup_hostname), setup_cursor_table[setup_cursor], 10);
 
     if (setup_cursor == 1)
-	M_DrawCharacter(168 + 8 * strlen(setup_myname),
-			setup_cursor_table[setup_cursor],
-			10 + ((int)(realtime * 4) & 1));
+	M_DrawCursor(168 + 8 * strlen(setup_myname), setup_cursor_table[setup_cursor], 10);
 }
 
 static void
@@ -1703,7 +1672,7 @@ M_Menu_Help_f(void)
 static void
 M_Help_Draw(void)
 {
-    M_DrawPic(0, 0, Draw_CachePic(va("gfx/help%i.lmp", help_page)));
+    M_DrawTransPic(0, 0, Draw_CachePic(va("gfx/help%i.lmp", help_page)));
 }
 
 static void
@@ -1772,7 +1741,7 @@ M_Menu_LanConfig_f(void)
     if (StartingGame && lanConfig_cursor == 2)
 	lanConfig_cursor = 1;
     lanConfig_port = DEFAULTnet_hostport;
-    sprintf(lanConfig_portname, "%u", lanConfig_port);
+    qsnprintf(lanConfig_portname, sizeof(lanConfig_portname), "%u", lanConfig_port);
 
     m_return_onerror = false;
     m_return_reason[0] = 0;
@@ -1789,7 +1758,7 @@ M_LanConfig_Draw(void)
     M_DrawTransPic(16, 4, Draw_CachePic("gfx/qplaque.lmp"));
     p = Draw_CachePic("gfx/p_multi.lmp");
     basex = (320 - p->width) / 2;
-    M_DrawPic(basex, 4, p);
+    M_DrawTransPic(basex, 4, p);
 
     if (StartingGame)
 	startJoin = "New Game";
@@ -1817,18 +1786,13 @@ M_LanConfig_Draw(void)
 	M_Print(basex + 8, lanConfig_cursor_table[1], "OK");
     }
 
-    M_DrawCharacter(basex - 8, lanConfig_cursor_table[lanConfig_cursor],
-		    12 + ((int)(realtime * 4) & 1));
+    M_DrawCursor(basex - 8, lanConfig_cursor_table[lanConfig_cursor], 12);
 
     if (lanConfig_cursor == 0)
-	M_DrawCharacter(basex + 9 * 8 + 8 * strlen(lanConfig_portname),
-			lanConfig_cursor_table[0],
-			10 + ((int)(realtime * 4) & 1));
+	M_DrawCursor(basex + 9 * 8 + 8 * strlen(lanConfig_portname), lanConfig_cursor_table[0], 10);
 
     if (lanConfig_cursor == 2)
-	M_DrawCharacter(basex + 16 + 8 * strlen(lanConfig_joinname),
-			lanConfig_cursor_table[2],
-			10 + ((int)(realtime * 4) & 1));
+	M_DrawCursor(basex + 16 + 8 * strlen(lanConfig_joinname), lanConfig_cursor_table[2], 10);
 
     if (*m_return_reason)
 	M_PrintWhite(basex, 148, m_return_reason);
@@ -1930,7 +1894,7 @@ M_LanConfig_Key(knum_t keynum)
 
     port = Q_atoi(lanConfig_portname);
     lanConfig_port = qmin(port, 65535);
-    snprintf(lanConfig_portname, sizeof(lanConfig_portname), "%u",
+    qsnprintf(lanConfig_portname, sizeof(lanConfig_portname), "%u",
 	     lanConfig_port);
 }
 
@@ -2105,7 +2069,7 @@ M_GameOptions_Draw(void)
 
     M_DrawTransPic(16, 4, Draw_CachePic("gfx/qplaque.lmp"));
     p = Draw_CachePic("gfx/p_multi.lmp");
-    M_DrawPic((320 - p->width) / 2, 4, p);
+    M_DrawTransPic((320 - p->width) / 2, 4, p);
 
     M_DrawTextBox(152, 32, 10, 1);
     M_Print(160, 40, "begin game");
@@ -2222,9 +2186,7 @@ M_GameOptions_Draw(void)
 		levels[episodes[startepisode].firstLevel + startlevel].name);
     }
 
-// line cursor
-    M_DrawCharacter(144, gameoptions_cursor_table[gameoptions_cursor],
-		    12 + ((int)(realtime * 4) & 1));
+    M_DrawCursor(144, gameoptions_cursor_table[gameoptions_cursor], 12);
 
     if (m_serverInfoMessage) {
 	if ((realtime - m_serverInfoMessageTime) < 5.0) {
@@ -2437,7 +2399,7 @@ M_Search_Draw(void)
     int x;
 
     p = Draw_CachePic("gfx/p_multi.lmp");
-    M_DrawPic((320 - p->width) / 2, 4, p);
+    M_DrawTransPic((320 - p->width) / 2, 4, p);
     x = (320 / 2) - ((12 * 8) / 2) + 4;
     M_DrawTextBox(x - 8, 32, 12, 1);
     M_Print(x, 40, "Searching...");
@@ -2512,18 +2474,19 @@ M_ServerList_Draw(void)
     }
 
     p = Draw_CachePic("gfx/p_multi.lmp");
-    M_DrawPic((320 - p->width) / 2, 4, p);
+    M_DrawTransPic((320 - p->width) / 2, 4, p);
     for (n = 0; n < hostCacheCount; n++) {
-	if (hostcache[n].maxusers)
-	    sprintf(string, "%-15.15s %-15.15s %2u/%2u\n", hostcache[n].name,
-		    hostcache[n].map, hostcache[n].users,
-		    hostcache[n].maxusers);
-	else
-	    sprintf(string, "%-15.15s %-15.15s\n", hostcache[n].name,
-		    hostcache[n].map);
+	if (hostcache[n].maxusers) {
+	    qsnprintf(string, sizeof(string), "%-15.15s %-15.15s %2u/%2u\n", hostcache[n].name,
+		      hostcache[n].map, hostcache[n].users,
+		      hostcache[n].maxusers);
+	} else {
+	    qsnprintf(string, sizeof(string), "%-15.15s %-15.15s\n", hostcache[n].name,
+		      hostcache[n].map);
+	}
 	M_Print(16, 32 + 8 * n, string);
     }
-    M_DrawCharacter(0, 32 + slist_cursor * 8, 12 + ((int)(realtime * 4) & 1));
+    M_DrawCursor(0, 32 + slist_cursor * 8, 12);
 
     if (*m_return_reason)
 	M_PrintWhite(16, 148, m_return_reason);

@@ -23,6 +23,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "quakedef.h"
 #include "r_local.h"
 #include "d_local.h"		// FIXME: shouldn't need to include this
+#include "protocol.h"
 
 #define MAXLEFTCLIPEDGES	100
 
@@ -105,7 +106,7 @@ R_EmitEdge(mvertex_t *pv0, mvertex_t *pv1)
 	if (v0 > r_refdef.fvrectbottom_adj)
 	    v0 = r_refdef.fvrectbottom_adj;
 
-	ceilv0 = (int)ceil(v0);
+	ceilv0 = (int)ceilf(v0);
     }
 
     world = &pv1->position[0];
@@ -145,7 +146,7 @@ R_EmitEdge(mvertex_t *pv0, mvertex_t *pv1)
 
     r_emitted = 1;
 
-    r_ceilv1 = (int)ceil(r_v1);
+    r_ceilv1 = (int)ceilf(r_v1);
 
 // create the edge
     if (ceilv0 == r_ceilv1) {
@@ -356,7 +357,7 @@ R_RenderFace
 ================
 */
 void
-R_RenderFace(const entity_t *e, msurface_t *fa, int clipflags)
+R_RenderFace(const entity_t *e, msurface_t *surf, int clipflags)
 {
     const brushmodel_t *brushmodel = BrushModel(e->model);
     const qboolean insubmodel = e->model != r_worldentity.model;
@@ -369,13 +370,13 @@ R_RenderFace(const entity_t *e, msurface_t *fa, int clipflags)
     clipplane_t *pclip;
 
 // skip out if no more surfs
-    if ((surface_p) >= surf_max) {
-	r_outofsurfaces++;
+    if (surface_p >= surf_max) {
+	r_surfaces_overflow = true;
 	return;
     }
 // ditto if not enough edges left, or switch to auxedges if possible
-    if ((edge_p + fa->numedges + 4) >= edge_max) {
-	r_outofedges += fa->numedges;
+    if ((edge_p + surf->numedges + 4) >= edge_max) {
+	r_edges_overflow = true;
 	return;
     }
 
@@ -399,8 +400,8 @@ R_RenderFace(const entity_t *e, msurface_t *fa, int clipflags)
     pedges = brushmodel->edges;
     r_lastvertvalid = false;
 
-    for (i = 0; i < fa->numedges; i++) {
-	lindex = brushmodel->surfedges[fa->firstedge + i];
+    for (i = 0; i < surf->numedges; i++) {
+	lindex = brushmodel->surfedges[surf->firstedge + i];
 
 	if (lindex > 0) {
 	    r_pedge = &pedges[lindex];
@@ -468,16 +469,19 @@ R_RenderFace(const entity_t *e, msurface_t *fa, int clipflags)
 
     r_polycount++;
 
-    surface_p->data = (void *)fa;
+    surface_p->data = (void *)surf;
     surface_p->nearzi = r_nearzi;
-    surface_p->flags = fa->flags;
+    surface_p->flags = surf->flags;
     surface_p->insubmodel = insubmodel;
     surface_p->spanstate = 0;
     surface_p->entity = e;
     surface_p->key = r_currentkey++;
     surface_p->spans = NULL;
 
-    pplane = fa->plane;
+    /* Flag alpha surfs */
+    surface_p->alphatable = Alpha_Transtable(R_GetSurfAlpha(surf->flags));
+
+    pplane = surf->plane;
 // FIXME: cache this?
     TransformVector(pplane->normal, p_normal);
 // FIXME: cache this?
@@ -498,9 +502,10 @@ R_RenderBmodelFace
 ================
 */
 void
-R_RenderBmodelFace(const entity_t *e, bedge_t *pedges, msurface_t *psurf)
+R_RenderBmodelFace(const entity_t *entity, bedge_t *pedges, msurface_t *psurf)
 {
     int i;
+    float alpha;
     unsigned mask;
     mplane_t *pplane;
     float distinv;
@@ -510,12 +515,12 @@ R_RenderBmodelFace(const entity_t *e, bedge_t *pedges, msurface_t *psurf)
 
 // skip out if no more surfs
     if (surface_p >= surf_max) {
-	r_outofsurfaces++;
+	r_surfaces_overflow = true;
 	return;
     }
 // ditto if not enough edges left, or switch to auxedges if possible
     if ((edge_p + psurf->numedges + 4) >= edge_max) {
-	r_outofedges += psurf->numedges;
+	r_edges_overflow = true;
 	return;
     }
 
@@ -577,9 +582,17 @@ R_RenderBmodelFace(const entity_t *e, bedge_t *pedges, msurface_t *psurf)
     surface_p->flags = psurf->flags;
     surface_p->insubmodel = true;
     surface_p->spanstate = 0;
-    surface_p->entity = e;
+    surface_p->entity = entity;
     surface_p->key = r_currentbkey;
     surface_p->spans = NULL;
+
+    /* Flag alpha surfs */
+    alpha = R_GetSurfAlpha(psurf->flags);
+    if (entity->alpha != ENTALPHA_DEFAULT && entity->alpha != ENTALPHA_ONE) {
+        alpha *= ENTALPHA_DECODE(entity->alpha);
+        surface_p->flags |= SURF_DRAWENTALPHA;
+    }
+    surface_p->alphatable = Alpha_Transtable(alpha);
 
     pplane = psurf->plane;
 // FIXME: cache this?

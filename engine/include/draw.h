@@ -21,6 +21,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef DRAW_H
 #define DRAW_H
 
+#ifdef GLQUAKE
+#include "glquake.h"
+#else
+#include "d_iface.h"
+#endif
+
 #include "qpic.h"
 #include "qtypes.h"
 
@@ -28,18 +34,19 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // to touch the vid buffer
 
 extern const qpic8_t *draw_disc;	// also used on sbar
+extern const qpic8_t *draw_backtile;
 extern const byte *draw_chars;
 
 void Draw_Init(void);
-void Draw_Character(int x, int y, int num);
+void Draw_Character(int x, int y, byte num);
 void Draw_Pic(int x, int y, const qpic8_t *pic);
-void Draw_TransPic(int x, int y, const qpic8_t *pic);
-void Draw_TransPicTranslate(int x, int y, const qpic8_t *pic,
-			    byte *translation);
+void Draw_TransPic(int x, int y, const qpic8_t *pic, byte transparent_color);
+void Draw_TransPicTranslate(int x, int y, const qpic8_t *pic, const byte *translation);
 void Draw_ConsoleBackground(int lines);
 void Draw_BeginDisc(void);
 void Draw_EndDisc(void);
 void Draw_TileClear(int x, int y, int w, int h);
+void Draw_TileClearScaled(int x, int y, int w, int h);
 void Draw_Fill(int x, int y, int w, int h, int c);
 void Draw_FadeScreen(void);
 void Draw_String(int x, int y, const char *str);

@@ -20,6 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // sv_main.c -- server main program
 
 #include "bspfile.h"
+#include "buildinfo.h"
 #include "cmd.h"
 #include "console.h"
 #include "cvar.h"
@@ -58,7 +59,7 @@ static sv_protocol_t sv_protocols[] = {
     PROT(PROTOCOL_VERSION_BJP3, "bjp3", "BJP protocol (v3)"),
 };
 
-static int sv_protocol = PROTOCOL_VERSION_NQ;
+static int sv_protocol = PROTOCOL_VERSION_FITZ;
 
 static void
 SV_Protocol_f(void)
@@ -123,7 +124,7 @@ SV_Protocol_Arg_f(const char *arg)
 	for (i = 0; i < ARRAY_SIZE(sv_protocols); i++) {
 	    if (!arg || !strncasecmp(sv_protocols[i].name, arg, arg_len))
 		STree_InsertAlloc(root, sv_protocols[i].name, false);
-	    snprintf(digits, sizeof(digits), "%d", sv_protocols[i].version);
+	    qsnprintf(digits, sizeof(digits), "%d", sv_protocols[i].version);
 	    if (arg_len && !strncmp(digits, arg, arg_len))
 		STree_InsertAlloc(root, digits, true);
 	}
@@ -156,7 +157,7 @@ SV_Init(void)
     Cmd_SetCompletion("sv_protocol", SV_Protocol_Arg_f);
 
     for (i = 0; i < MAX_MODELS; i++)
-	sprintf(localmodels[i], "*%i", i);
+	qsnprintf(localmodels[i], sizeof(localmodels[0]), "*%i", i);
 }
 
 /*
@@ -274,7 +275,7 @@ SV_StartSound(edict_t *entity, int channel, const char *sample, int volume,
 	    break;
 
     if (sound_num == MAX_SOUNDS || !sv.sound_precache[sound_num]) {
-	Con_Printf("%s: %s not precacheed\n", __func__, sample);
+	Con_Printf("%s: %s not precached\n", __func__, sample);
 	return;
     }
 
@@ -341,8 +342,8 @@ SV_SendServerinfo(client_t *client)
 
     MSG_WriteByte(&client->message, svc_print);
     MSG_WriteStringf(&client->message,
-		     "%c\nVERSION TyrQuake-%s SERVER (%i CRC)",
-		     2, stringify(TYR_VERSION), pr_crc);
+		     "%c\nVERSION TyrQuake-%s SERVER (%i CRC)\n",
+		     2, build_version, pr_crc);
 
     MSG_WriteByte(&client->message, svc_serverinfo);
     MSG_WriteLong(&client->message, sv.protocol);
@@ -461,7 +462,7 @@ SV_CheckForNewClients(void)
 	    if (!svs.clients[i].active)
 		break;
 	if (i == svs.maxclients)
-	    Sys_Error("%s: no free clients", __func__);
+	    Host_Error("%s: no free clients", __func__);
 
 	svs.clients[i].netconnection = sock;
 	SV_ConnectClient(i);
@@ -495,7 +496,7 @@ SV_ClearDatagram(void)
 //=============================================================================
 
 void
-SV_WriteModelIndex(sizebuf_t *sb, int c, unsigned int bits)
+SV_WriteModelIndex(sizebuf_t *sb, int c, unsigned int bits, msgtype_t type)
 {
     switch (sv.protocol) {
     case PROTOCOL_VERSION_NQ:
@@ -507,7 +508,7 @@ SV_WriteModelIndex(sizebuf_t *sb, int c, unsigned int bits)
 	MSG_WriteShort(sb, c);
 	break;
     case PROTOCOL_VERSION_FITZ:
-	if (bits & B_FITZ_LARGEMODEL)
+	if (type == msgtype_baseline && (bits & B_FITZ_LARGEMODEL))
 	    MSG_WriteShort(sb, c);
 	else
 	    MSG_WriteByte(sb, c);
@@ -538,7 +539,7 @@ SV_WriteEntitiesToClient(edict_t *clent, sizebuf_t *msg)
     VectorAdd(clent->v.origin, clent->v.view_ofs, org);
     pvs = Mod_FatPVS(sv.worldmodel, org);
 
-// send over all entities (excpet the client) that touch the pvs
+// send over all entities (except the client) that touch the pvs
     ent = NEXT_EDICT(sv.edicts);
     for (e = 1; e < sv.num_edicts; e++, ent = NEXT_EDICT(ent)) {
 
@@ -549,14 +550,15 @@ SV_WriteEntitiesToClient(edict_t *clent, sizebuf_t *msg)
 	    if (!ent->v.modelindex || !*PR_GetString(ent->v.model))
 		continue;
 
-// ignore if not touching a PV leaf
-	    for (i = 0; i < ent->num_leafs; i++)
-		if (Mod_TestLeafBit(pvs, ent->leafnums[i]))
-		    break;
-
-	    if (i == ent->num_leafs)
-		continue;	// not visible
-	}
+// ignore if not touching a PV leaf, unless num_leafs overflowed
+            if (ent->num_leafs < MAX_ENT_LEAFS) {
+                for (i = 0; i < ent->num_leafs; i++)
+                    if (Mod_TestLeafBit(pvs, ent->leafnums[i]))
+                        break;
+                if (i == ent->num_leafs)
+                    continue;	// not visible
+            }
+        }
 
 	if (msg->maxsize - msg->cursize < 16) {
 	    Con_Printf("packet overflow\n");
@@ -598,9 +600,19 @@ SV_WriteEntitiesToClient(edict_t *clent, sizebuf_t *msg)
 	if (ent->baseline.modelindex != ent->v.modelindex)
 	    bits |= U_MODEL;
 
-	/* FIXME - TODO: add alpha stuff here */
+        if (pr_alpha_supported) {
+            eval_t *val = GetEdictFieldValue(ent, "alpha");
+            if (val)
+                ent->alpha = ENTALPHA_ENCODE(val->_float);
+        }
+
+        // Don't send fully transparent entities, unless they have effects
+        if (ent->alpha == ENTALPHA_ZERO && !ent->v.effects)
+            continue;
 
 	if (sv.protocol == PROTOCOL_VERSION_FITZ) {
+            if (ent->baseline.alpha != ent->alpha)
+                bits |= U_FITZ_ALPHA;
 	    if ((bits & U_FRAME) && ((int)ent->v.frame & 0xff00))
 		bits |= U_FITZ_FRAME2;
 	    if ((bits & U_MODEL) && ((int)ent->v.modelindex & 0xff00))
@@ -636,7 +648,7 @@ SV_WriteEntitiesToClient(edict_t *clent, sizebuf_t *msg)
 	    MSG_WriteByte(msg, e);
 
 	if (bits & U_MODEL)
-	    SV_WriteModelIndex(msg, ent->v.modelindex, 0);
+	    SV_WriteModelIndex(msg, ent->v.modelindex, 0, msgtype_update);
 	if (bits & U_FRAME)
 	    MSG_WriteByte(msg, ent->v.frame);
 	if (bits & U_COLORMAP)
@@ -657,10 +669,9 @@ SV_WriteEntitiesToClient(edict_t *clent, sizebuf_t *msg)
 	    MSG_WriteCoord(msg, ent->v.origin[2]);
 	if (bits & U_ANGLE3)
 	    MSG_WriteAngle(msg, ent->v.angles[2]);
-#if 0 /* FIXME */
+
 	if (bits & U_FITZ_ALPHA)
 	    MSG_WriteByte(msg, ent->alpha);
-#endif
 	if (bits & U_FITZ_FRAME2)
 	    MSG_WriteByte(msg, (int)ent->v.frame >> 8);
 	if (bits & U_FITZ_MODEL2)
@@ -839,7 +850,7 @@ SV_WriteClientdataToMessage(edict_t *player, sizebuf_t *msg)
     if (bits & SU_ARMOR)
 	MSG_WriteByte(msg, player->v.armorvalue);
     if (bits & SU_WEAPON)
-	SV_WriteModelIndex(msg, SV_ModelIndex(PR_GetString(player->v.weaponmodel)), 0);
+	SV_WriteModelIndex(msg, SV_ModelIndex(PR_GetString(player->v.weaponmodel)), 0, msgtype_update);
 
     MSG_WriteShort(msg, player->v.health);
     MSG_WriteByte(msg, player->v.currentammo);
@@ -1086,7 +1097,7 @@ SV_ModelIndex(const char *name)
 	if (!strcmp(sv.model_precache[i], name))
 	    return i;
     if (i == MAX_MODELS || !sv.model_precache[i])
-	Sys_Error("%s: model %s not precached", __func__, name);
+	Host_Error("Model %s not precached", name);
     return i;
 }
 
@@ -1122,10 +1133,11 @@ SV_CreateBaseline(void)
 	if (entnum > 0 && entnum <= svs.maxclients) {
 	    svent->baseline.colormap = entnum;
 	    svent->baseline.modelindex = SV_ModelIndex("progs/player.mdl");
+            svent->baseline.alpha = ENTALPHA_DEFAULT;
 	} else {
 	    svent->baseline.colormap = 0;
-	    svent->baseline.modelindex =
-		SV_ModelIndex(PR_GetString(svent->v.model));
+	    svent->baseline.modelindex = SV_ModelIndex(PR_GetString(svent->v.model));
+            svent->baseline.alpha = svent->alpha;
 	}
 
 	bits = 0;
@@ -1134,11 +1146,11 @@ SV_CreateBaseline(void)
 		bits |= B_FITZ_LARGEMODEL;
 	    if (svent->baseline.frame & 0xff00)
 		bits |= B_FITZ_LARGEFRAME;
-#if 0 /* FIXME - TODO */
 	    if (svent->baseline.alpha != ENTALPHA_DEFAULT)
-		bits |= B_FITZ_ALPHA
-#endif
-	}
+		bits |= B_FITZ_ALPHA;
+        } else {
+            svent->baseline.alpha = ENTALPHA_DEFAULT;
+        }
 
 	//
 	// add to the message
@@ -1152,7 +1164,7 @@ SV_CreateBaseline(void)
 	    MSG_WriteShort(&sv.signon, entnum);
 	}
 
-	SV_WriteModelIndex(&sv.signon, svent->baseline.modelindex, bits);
+	SV_WriteModelIndex(&sv.signon, svent->baseline.modelindex, bits, msgtype_baseline);
 	if (bits & B_FITZ_LARGEFRAME)
 	    MSG_WriteShort(&sv.signon, svent->baseline.frame);
 	else
@@ -1164,10 +1176,8 @@ SV_CreateBaseline(void)
 	    MSG_WriteAngle(&sv.signon, svent->baseline.angles[i]);
 	}
 
-#if 0 /* FIXME - TODO */
 	if (bits & B_FITZ_ALPHA)
 	    MSG_WriteByte(&sv.signon, svent->baseline.alpha);
-#endif
     }
 }
 
@@ -1311,7 +1321,7 @@ SV_SpawnServer(char *server)
     sv.time = 1.0;
 
     strcpy(sv.name, server);
-    sprintf(sv.modelname, "maps/%s.bsp", server);
+    qsnprintf(sv.modelname, sizeof(sv.modelname), "maps/%s.bsp", server);
     model = Mod_ForName(sv.modelname, false);
     if (!model) {
 	Con_Printf("Couldn't spawn server %s\n", sv.modelname);

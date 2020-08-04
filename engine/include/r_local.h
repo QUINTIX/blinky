@@ -40,15 +40,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 				// if bbox is trivially rejected
 
 //===========================================================================
-// viewmodel lighting
-
-typedef struct {
-    int ambientlight;
-    int shadelight;
-    float *plightvec;
-} alight_t;
-
-//===========================================================================
 // clipped bmodel edges
 
 typedef struct bedge_s {
@@ -71,8 +62,6 @@ extern cvar_t r_fullbright;
 extern cvar_t r_drawentities;
 extern cvar_t r_drawflat;
 extern cvar_t r_ambient;
-extern cvar_t r_numsurfs;
-extern cvar_t r_numedges;
 
 #define XCENTERING	(1.0 / 2.0)
 #define YCENTERING	(1.0 / 2.0)
@@ -138,14 +127,23 @@ void R_Surf16Patch(void);
 void R_DrawSubmodelPolygons(const entity_t *entity, int clipflags);
 void R_DrawSolidClippedSubmodelPolygons(const entity_t *entity);
 
+typedef struct {
+    int found;
+    int lines[MAXHEIGHT + 1];
+} scanflags_t;
+
+void R_ScanEdges(int drawflags, scanflags_t *scanflags);
+
 void R_AddPolygonEdges(emitpoint_t *pverts, int numverts, int miplevel);
 surf_t *R_GetSurf(void);
-void R_AliasDrawModel(entity_t *e, alight_t *plighting);
+void R_AliasDrawModel(entity_t *e);
 void R_BeginEdgeFrame(void);
-void R_ScanEdges(void);
+
+#ifdef USE_X86_ASM
 void R_InsertNewEdges(edge_t *edgestoadd, edge_t *edgelist);
 void R_StepActiveU(edge_t *pedge);
 void R_RemoveEdges(edge_t *pedge);
+#endif
 
 extern void R_Surf8Start(void);
 extern void R_Surf8End(void);
@@ -190,8 +188,6 @@ extern float leftclip, topclip, rightclip, bottomclip;
 extern int r_acliptype;
 extern float r_avertexnormals[][3];
 
-qboolean R_AliasCheckBBox(entity_t *e);
-
 //=========================================================
 // turbulence stuff
 
@@ -210,7 +206,9 @@ void R_SurfacePatch(void);
 
 extern int r_amodels_drawn;
 extern edge_t *auxedges;
-extern int r_numallocatededges;
+extern surf_t *auxsurfaces;
+extern edge_t *saveedges;
+extern surf_t *savesurfs;
 extern edge_t *r_edges, *edge_p, *edge_max;
 
 extern edge_t *newedges[MAXHEIGHT];
@@ -227,8 +225,8 @@ extern int r_bmodelactive;
 extern float aliasxscale, aliasyscale, aliasxcenter, aliasycenter;
 extern float r_aliastransition, r_resfudge;
 
-extern int r_outofsurfaces;
-extern int r_outofedges;
+extern qboolean r_surfaces_overflow;
+extern qboolean r_edges_overflow;
 extern int r_maxvalidedgeoffset;
 
 void R_AliasClipTriangle(mtriangle_t *ptri, finalvert_t *pfinalverts, auxvert_t *pauxverts);
@@ -241,7 +239,6 @@ void R_Alias_clip_right(finalvert_t *pfv0, finalvert_t *pfv1, finalvert_t *out);
 extern float r_time1;
 extern float dp_time1, dp_time2, db_time1, db_time2, rw_time1, rw_time2;
 extern float se_time1, se_time2, de_time1, de_time2, dv_time1, dv_time2;
-extern int r_maxsurfsseen, r_maxedgesseen;
 extern cshift_t cshift_water;
 extern qboolean r_dowarpold, r_viewchanged;
 
@@ -259,12 +256,23 @@ void R_PrintAliasStats(void);
 void R_PrintTimes(void);
 void R_PrintDSpeeds(void);
 void R_AnimateLight(void);
-int R_LightPoint(const vec3_t point);
 void R_SetupFrame(void);
 void R_cshift_f(void);
 void R_EmitEdge(mvertex_t *pv0, mvertex_t *pv1);
 void R_ClipEdge(mvertex_t *pv0, mvertex_t *pv1, clipplane_t *clip);
 void R_SplitEntityOnNode2(mnode_t *node);
 void R_MarkLights(dlight_t *light, int bit, mnode_t *node);
+
+/*
+ * Light Sampling
+ */
+typedef struct {
+    const msurface_t *surf;
+    float s;
+    float t;
+} surf_lightpoint_t;
+
+qboolean R_LightSurfPoint(const vec3_t point, surf_lightpoint_t *lightpoint);
+int R_LightPoint(const vec3_t point);
 
 #endif /* R_LOCAL_H */

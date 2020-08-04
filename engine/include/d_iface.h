@@ -132,11 +132,14 @@ void D_BeginDirectRect(int x, int y, const byte *pbitmap, int width,
 		       int height);
 void D_DisableBackBufferAccess(void);
 void D_EndDirectRect(int x, int y, int width, int height);
-void D_PolysetDraw(void);
+void D_PolysetDraw();
+void D_DrawSubdiv();
+void D_DrawNonSubdiv();
 void D_PolysetDrawFinalVerts(finalvert_t *fv, int numverts);
+void D_PolysetDrawFinalVerts_Translucent(finalvert_t *fv, int numverts);
 void D_DrawParticle(particle_t *pparticle);
 void D_DrawSprite(void);
-void D_DrawSurfaces(void);
+void D_DrawSurfaces(qboolean sort_submodels);
 void D_EnableBackBufferAccess(void);
 void D_EndParticles(void);
 void D_Init(void);
@@ -191,7 +194,8 @@ void R_DrawSurface(void);
 
 
 // !!! if this is changed, it must be changed in d_ifacea.h too !!!
-#define TURB_TEX_SIZE	64	// base turbulent texture size
+#define TURB_TEX_SIZE   64 // base turbulent texture size
+#define TURB_TEX_SHIFT   6
 
 // !!! if this is changed, it must be changed in d_ifacea.h too !!!
 #define	TURB_CYCLE	128	// turbulent cycle size
@@ -206,7 +210,6 @@ extern float skyspeed, skyspeed2;
 extern float skytime;
 
 extern int c_surf;
-extern vrect_t scr_vrect;
 
 extern byte *r_warpbuffer;
 

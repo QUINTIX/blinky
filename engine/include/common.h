@@ -41,9 +41,17 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define stringify__(x) #x
 #define stringify(x) stringify__(x)
 
+//============================================================================
+
+int qvsnprintf(char *str, size_t size, const char *format, va_list argptr);
+int qsnprintf(char *str, size_t size, const char *format, ...) __attribute__((format(printf,3,4)));
+char *qstrncpy(char *dest, const char *src, size_t size);
+
+//============================================================================
+
 #ifdef QW_HACK
-#define	MAX_INFO_STRING 196
-#define	MAX_SERVERINFO_STRING 512
+#define	MAX_INFO_STRING 256
+#define	MAX_SERVERINFO_STRING 1024
 #define	MAX_LOCALINFO_STRING 32768
 #endif
 
@@ -94,16 +102,50 @@ void InsertLinkAfter(link_t *l, link_t *after);
 #define Q_MINLONG ((int)0x80000000)
 #define Q_MINFLOAT ((int)0x7fffffff)
 
-//============================================================================
+/*
+ * ========================================================================
+ *                          BYTE ORDER FUNCTIONS
+ * ========================================================================
+ */
 
-extern qboolean bigendien;
+static inline short bswap16(short s)
+{
+    return ((s & 255) << 8) | ((s >> 8) & 255);
+}
+static inline int bswap32(int l)
+{
+    return
+          (((l >>  0) & 255) << 24)
+        | (((l >>  8) & 255) << 16)
+        | (((l >> 16) & 255) <<  8)
+        | (((l >> 24) & 255) <<  0);
+}
 
-extern short (*BigShort) (short l);
-extern short (*LittleShort) (short l);
-extern int (*BigLong) (int l);
-extern int (*LittleLong) (int l);
-extern float (*BigFloat) (float l);
-extern float (*LittleFloat) (float l);
+#ifdef __BIG_ENDIAN__
+static inline short BigShort(short s) { return s; }
+static inline int BigLong(int l) { return l; }
+static inline float BigFloat(float f) { return f; }
+static inline short LittleShort(short s) { return bswap16(s); }
+static inline int LittleLong(int l) { return bswap32(l); }
+static inline float LittleFloat(float f)
+{
+    union { float f; int l; } u = { .f = f };
+    u.l = bswap32(u.l);
+    return u.f;
+}
+#else
+static inline short BigShort(short s) { return bswap16(s); }
+static inline int BigLong(int l) { return bswap32(l); }
+static inline float BigFloat(float f)
+{
+    union { float f; int l; } u = { .f = f };
+    u.l = bswap32(u.l);
+    return u.f;
+}
+static inline short LittleShort(short s) { return s; }
+static inline int LittleLong(int l) { return l; }
+static inline float LittleFloat(float f) { return f; }
+#endif
 
 //============================================================================
 
@@ -117,9 +159,9 @@ void MSG_WriteShort(sizebuf_t *sb, int c);
 void MSG_WriteLong(sizebuf_t *sb, int c);
 void MSG_WriteFloat(sizebuf_t *sb, float f);
 void MSG_WriteString(sizebuf_t *sb, const char *s);
-void MSG_WriteStringf(sizebuf_t *sb, const char *fmt, ...)
+void MSG_WriteStringf(sizebuf_t *sb, const char *fmt, ...) 
     __attribute__((format(printf,2,3)));
-void MSG_WriteStringvf(sizebuf_t *sb, const char *fmt, va_list ap)
+void MSG_WriteStringvf(sizebuf_t *sb, const char *fmt, va_list ap) 
     __attribute__((format(printf,2,0)));
 void MSG_WriteCoord(sizebuf_t *sb, float f);
 void MSG_WriteAngle(sizebuf_t *sb, float f);
@@ -187,15 +229,12 @@ void COM_StripExtension(const char *filename, char *out, size_t buflen);
 void COM_FileBase(const char *in, char *out, size_t buflen);
 int COM_DefaultExtension(const char *path, const char *extension,
 			 char *out, size_t buflen);
-int COM_CheckExtension(const char *path, const char *extn);
-
-char *va(const char *format, ...) __attribute__((format(printf,1,2)));
 
 // does a varargs printf into a temp buffer
+const char *va(const char *format, ...) __attribute__((format(printf,1,2)));
 
 //============================================================================
 
-extern int com_filesize;
 struct cache_user_s;
 
 extern char com_basedir[MAX_OSPATH];
@@ -203,13 +242,12 @@ extern char com_gamedir[MAX_OSPATH];
 
 void COM_WriteFile(const char *filename, const void *data, int len);
 int COM_FOpenFile(const char *filename, FILE **file);
-void COM_ScanDir(struct stree_root *root, const char *path,
-		 const char *pfx, const char *ext, qboolean stripext);
-
-void *COM_LoadStackFile(const char *path, void *buffer, int bufsize,
+void COM_ScanDir(struct stree_root *root, const char *path, 
+		 const char *prefix, const char *suffix, qboolean strip);
+void *COM_LoadStackFile(const char *path, void *buffer, size_t buffersize,
 			size_t *size);
-void *COM_LoadTempFile(const char *path);
-void *COM_LoadHunkFile(const char *path);
+void *COM_LoadTempFile(const char *path, size_t *size);
+void *COM_LoadHunkFile(const char *path, size_t *size);
 void COM_LoadCacheFile(const char *path, struct cache_user_s *cu);
 #ifdef QW_HACK
 void COM_CreatePath(const char *path);
@@ -218,6 +256,8 @@ void COM_Gamedir(const char *dir);
 
 extern struct cvar_s registered;
 extern qboolean standard_quake, rogue, hipnotic;
+
+char *Entity_ValueForKey(const char *string, const char *key, char *buffer, int buflen);
 
 #ifdef QW_HACK
 char *Info_ValueForKey(const char *infostring, const char *key);
@@ -235,8 +275,6 @@ void Com_BlockFullChecksum(const void *buffer, int len,
 byte COM_BlockSequenceCheckByte(const byte *base, int length, int sequence,
 				unsigned mapchecksum);
 byte COM_BlockSequenceCRCByte(const byte *base, int length, int sequence);
-
-int build_number(void);
 
 extern char gamedirfile[];
 #endif

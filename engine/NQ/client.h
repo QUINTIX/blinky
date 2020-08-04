@@ -79,7 +79,7 @@ typedef struct {
 
 #define	NUM_CSHIFTS	4
 
-#define	MAX_EFRAGS	4096
+#define	MAX_EFRAGS	8192
 
 #define	MAX_MAPSTRING	2048
 #define	MAX_DEMOS	8
@@ -254,8 +254,7 @@ extern cvar_t m_side;
 extern cvar_t m_freelook;
 
 
-#define	MAX_TEMP_ENTITIES	64	// lightning bolts, etc
-#define	MAX_STATIC_ENTITIES	1024	// torches, etc
+#define	MAX_STATIC_ENTITIES 8192 // torches, etc
 
 extern client_state_t cl;
 
@@ -265,7 +264,6 @@ extern entity_t cl_entities[MAX_EDICTS];
 extern entity_t cl_static_entities[MAX_STATIC_ENTITIES];
 extern lightstyle_t cl_lightstyle[MAX_LIGHTSTYLES];
 extern dlight_t cl_dlights[MAX_DLIGHTS];
-extern entity_t cl_temp_entities[MAX_TEMP_ENTITIES];
 
 /*
  * CL_PlayerEntity()
@@ -287,7 +285,7 @@ enum {
     DLIGHT_RED = 2,
     DLIGHT_PURPLE = 3
 };
-const float dl_colors[4][4]; /* Use enums to reference the colors */
+extern const float dl_colors[4][4]; /* Use enums to reference the colors */
 
 void CL_DecayLights(void);
 void CL_RunParticles(void);
@@ -304,9 +302,10 @@ void CL_Disconnect(void);
 void CL_Disconnect_f(void);
 void CL_NextDemo(void);
 
-#define MAX_VISEDICTS 1024
+#define MAX_VISEDICTS 4096
 extern int cl_numvisedicts;
-extern entity_t cl_visedicts[];
+extern entity_t *cl_visedicts[];
+extern int cl_visedicts_framenum;
 
 extern int fps_count;
 
@@ -373,21 +372,5 @@ void V_SetContentsColor(int contents);
 void CL_InitTEnts(void);
 void CL_ClearTEnts(void);
 void CL_SignonReply(void);
-
-typedef struct {
-    char manufacturer;
-    char version;
-    char encoding;
-    char bits_per_pixel;
-    unsigned short xmin, ymin, xmax, ymax;
-    unsigned short hres, vres;
-    unsigned char palette[48];
-    char reserved;
-    char color_planes;
-    unsigned short bytes_per_line;
-    unsigned short palette_type;
-    char filler[58];
-    unsigned char data;		// unbounded
-} pcx_t;
 
 #endif /* CLIENT_H */

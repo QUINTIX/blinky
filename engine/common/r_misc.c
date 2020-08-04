@@ -170,11 +170,11 @@ R_TimeGraph(void)
     r_time2 = Sys_DoubleTime();
 
     a = (r_time2 - r_time1) / 0.001;
-//a = fabs(mouse_y * 0.05);
+//a = fabsf(mouse_y * 0.05);
 //a = (int)((r_refdef.vieworg[2] + 1024)/1)%(int)r_graphheight.value;
 //a = (int)((pmove.velocity[2] + 500)/10);
-//a = fabs(velocity[0])/20;
-//a = ((int)fabs(origin[0])/8)%20;
+//a = fabsf(velocity[0])/20;
+//a = ((int)fabsf(origin[0])/8)%20;
 //a = (cl.idealpitch + 30)/5;
 //a = (int)(cl.simangles[YAW] * 64/360) & 63;
 
@@ -201,7 +201,7 @@ R_TimeGraph(void)
 	    i += MAX_TIMINGS;
 	R_LineGraph(x + w - 1 - a, y, r_timings[i]);
     }
-    sprintf(st, "Render time %dms", r_timings[timex]);
+    qsnprintf(st, sizeof(st), "Render time %dms", r_timings[timex]);
     Draw_String(8, y2, st);
 
     timex = (timex + 1) % MAX_TIMINGS;
@@ -239,7 +239,7 @@ R_NetGraph(void)
 	i = (cls.netchan.outgoing_sequence - a) & NET_TIMINGSMASK;
 	R_LineGraph(x + w - 1 - a, y, packet_latency[i]);
     }
-    sprintf(st, "%3i%% packet loss", lost);
+    qsnprintf(st, sizeof(st), "%3i%% packet loss", lost);
     Draw_String(8, y2, st);
 }
 
@@ -421,7 +421,6 @@ R_SetupFrame
 void
 R_SetupFrame(void)
 {
-    int edgecount;
     vrect_t vrect;
     float w, h;
 
@@ -440,25 +439,6 @@ R_SetupFrame(void)
     r_ambient.value = 0;
     r_drawflat.value = 0;
 #endif
-
-    if (r_numsurfs.value) {
-	if ((surface_p - surfaces) > r_maxsurfsseen)
-	    r_maxsurfsseen = surface_p - surfaces;
-
-	Con_Printf("Used %d of %d surfs; %d max\n",
-		   (int)(surface_p - surfaces),
-		   (int)(surf_max - surfaces), r_maxsurfsseen);
-    }
-
-    if (r_numedges.value) {
-	edgecount = edge_p - r_edges;
-
-	if (edgecount > r_maxedgesseen)
-	    r_maxedgesseen = edgecount;
-
-	Con_Printf("Used %d of %d edges; %d max\n", edgecount,
-		   r_numallocatededges, r_maxedgesseen);
-    }
 
     r_refdef.ambientlight = r_ambient.value;
 
@@ -493,27 +473,14 @@ R_SetupFrame(void)
     VectorCopy(r_refdef.vieworg, modelorg);
     VectorCopy(r_refdef.vieworg, r_origin);
 
-    extern qboolean fisheye_enabled;
-    if (fisheye_enabled) {
-        VectorCopy(r_refdef.forward, vpn);
-        VectorCopy(r_refdef.right, vright);
-        VectorCopy(r_refdef.up, vup);
-    }
-    else {
-        AngleVectors(r_refdef.viewangles, vpn, vright, vup);
-    }
+    AngleVectors(r_refdef.viewangles, vpn, vright, vup);
 
 // current viewleaf
     r_oldviewleaf = r_viewleaf;
     r_viewleaf = Mod_PointInLeaf(cl.worldmodel, r_origin);
 
     r_dowarpold = r_dowarp;
-    if (fisheye_enabled) {
-        r_dowarp = 0;
-    }
-    else {
-        r_dowarp = r_waterwarp.value && (r_viewleaf->contents <= CONTENTS_WATER);
-    }
+    r_dowarp = r_waterwarp.value && (r_viewleaf->contents <= CONTENTS_WATER);
 
     if ((r_dowarp != r_dowarpold) || r_viewchanged) {
 	if (r_dowarp) {
@@ -544,11 +511,9 @@ R_SetupFrame(void)
 		vrect.width = (int)w;
 		vrect.height = (int)h;
 
-		R_ViewChanged(&vrect,
-			      (int)((float)sb_lines *
-				    (h / (float)vid.height)),
-			      vid.aspect * (h / w) * ((float)vid.width /
-						      (float)vid.height));
+                int lineadj = (int)((float)sb_lines * (h / (float)vid.height));
+                float aspect = vid.aspect * (h / w) * ((float)vid.width / (float)vid.height);
+		R_ViewChanged(&vrect, lineadj, aspect);
 	    }
 	} else {
 	    vrect.x = 0;
@@ -579,8 +544,6 @@ R_SetupFrame(void)
     r_polycount = 0;
     r_drawnpolycount = 0;
     r_amodels_drawn = 0;
-    r_outofsurfaces = 0;
-    r_outofedges = 0;
 
     D_SetupFrame();
 }

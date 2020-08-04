@@ -115,6 +115,7 @@ CL_EntityNum(int num)
 	    Host_Error("CL_EntityNum: %i is an invalid number", num);
 	while (cl.num_entities <= num) {
 	    cl_entities[cl.num_entities].colormap = vid.colormap;
+            cl_entities[cl.num_entities].lerp.flags = LERP_RESETMOVE | LERP_RESETANIM;
 	    cl.num_entities++;
 	}
     }
@@ -294,7 +295,7 @@ CL_ParseServerInfo(void)
 // parse signon message
     level = cl.levelname;
     maxlen = sizeof(cl.levelname);
-    snprintf(level, maxlen, "%s", MSG_ReadString());
+    qsnprintf(level, maxlen, "%s", MSG_ReadString());
 
 // seperate the printfs so the server message can have a color
     Con_Printf("\n\n\35\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36"
@@ -322,7 +323,7 @@ CL_ParseServerInfo(void)
 	}
 	model = model_precache[nummodels];
 	maxlen = sizeof(model_precache[0]);
-	snprintf(model, maxlen, "%s", in);
+	qsnprintf(model, maxlen, "%s", in);
 	Mod_TouchModel(model);
     }
 
@@ -340,7 +341,7 @@ CL_ParseServerInfo(void)
 	}
 	sound = sound_precache[numsounds];
 	maxlen = sizeof(sound_precache[0]);
-	snprintf(sound, maxlen, "%s", in);
+	qsnprintf(sound, maxlen, "%s", in);
 	S_TouchSound(sound);
     }
 
@@ -351,7 +352,6 @@ CL_ParseServerInfo(void)
 //
 // now we try to load everything else until a cache allocation fails
 //
-
     for (i = 1; i < nummodels; i++) {
 	cl.model_precache[i] = Mod_ForName(model_precache[i], false);
 	if (cl.model_precache[i] == NULL) {
@@ -380,9 +380,8 @@ CL_ParseServerInfo(void)
     noclip_anglehack = false;	// noclip is turned off at start
 }
 
-
 static int
-CL_ReadModelIndex(unsigned int bits)
+CL_ReadModelIndex(unsigned int bits, msgtype_t type)
 {
     switch (cl.protocol) {
     case PROTOCOL_VERSION_NQ:
@@ -392,9 +391,9 @@ CL_ReadModelIndex(unsigned int bits)
     case PROTOCOL_VERSION_BJP3:
 	return MSG_ReadShort();
     case PROTOCOL_VERSION_FITZ:
-	if (bits & B_FITZ_LARGEMODEL)
-	    return MSG_ReadShort();
-	return MSG_ReadByte();
+        if (type == msgtype_baseline && (bits & B_FITZ_LARGEMODEL))
+            return MSG_ReadShort();
+        return MSG_ReadByte();
     default:
 	Host_Error("%s: Unknown protocol version (%d)\n", __func__,
 		   cl.protocol);
@@ -402,7 +401,7 @@ CL_ReadModelIndex(unsigned int bits)
 }
 
 static int
-CL_ReadModelFrame(unsigned int bits)
+CL_ReadModelFrame(unsigned int bits, msgtype_t type)
 {
     switch (cl.protocol) {
     case PROTOCOL_VERSION_NQ:
@@ -411,7 +410,7 @@ CL_ReadModelFrame(unsigned int bits)
     case PROTOCOL_VERSION_BJP3:
 	return MSG_ReadByte();
     case PROTOCOL_VERSION_FITZ:
-	if (bits & B_FITZ_LARGEFRAME)
+        if (type == msgtype_baseline && (bits & B_FITZ_LARGEFRAME))
 	    return MSG_ReadShort();
 	return MSG_ReadByte();
     default:
@@ -475,10 +474,18 @@ CL_ParseUpdate(unsigned int bits)
     else
 	forcelink = false;
 
+    /*
+     * If more than 0.2 seconds since the last message we might have
+     * missed a think and be lerping to the wrong frame (most entities
+     * think every 0.1 sec)
+     */
+    if (ent->msgtime + 0.2f < cl.mtime[0])
+        ent->lerp.flags |= LERP_RESETANIM;
+
     ent->msgtime = cl.mtime[0];
 
     if (bits & U_MODEL) {
-	modnum = CL_ReadModelIndex(0);
+	modnum = CL_ReadModelIndex(0, msgtype_update);
 	if (modnum >= max_models(cl.protocol))
 	    Host_Error("CL_ParseModel: bad modnum");
     } else
@@ -489,14 +496,11 @@ CL_ParseUpdate(unsigned int bits)
     else
 	ent->frame = ent->baseline.frame;
 
-    /* ANIMATION LERPING INFO */
-    if (ent->currentframe != ent->frame) {
-	/* TODO: invalidate things when they fall off the
-	   currententities list or haven't been updated for a while */
-	ent->previousframe = ent->currentframe;
-	ent->previousframetime = ent->currentframetime;
-	ent->currentframe = ent->frame;
-	ent->currentframetime = cl.time;
+    if (bits & U_NOLERP) {
+        ent->lerp.flags |= LERP_MOVESTEP;
+        ent->forcelink = true;
+    } else {
+        ent->lerp.flags &= ~LERP_MOVESTEP;
     }
 
     if (bits & U_COLORMAP)
@@ -566,19 +570,23 @@ CL_ParseUpdate(unsigned int bits)
 	ent->msg_angles[0][2] = ent->baseline.angles[2];
 
     if (cl.protocol == PROTOCOL_VERSION_FITZ) {
-	if (bits & U_NOLERP) {
-	    // FIXME - TODO (called U_STEP in FQ)
-	}
-	if (bits & U_FITZ_ALPHA) {
-	    MSG_ReadByte(); // FIXME - TODO
-	}
+	if (bits & U_FITZ_ALPHA)
+	    ent->alpha = MSG_ReadByte();
+        else
+            ent->alpha = ent->baseline.alpha;
+
 	if (bits & U_FITZ_FRAME2)
 	    ent->frame = (ent->frame & 0xFF) | (MSG_ReadByte() << 8);
 	if (bits & U_FITZ_MODEL2)
 	    modnum = (modnum & 0xFF)| (MSG_ReadByte() << 8);
 	if (bits & U_FITZ_LERPFINISH) {
-	    MSG_ReadByte(); // FIXME - TODO
-	}
+	    ent->lerp.finish = ent->msgtime + MSG_ReadByte() / 255.0f;
+            ent->lerp.flags |= LERP_FINISH;
+	} else {
+            ent->lerp.flags &= ~LERP_FINISH;
+        }
+    } else {
+        ent->alpha = ent->baseline.alpha;
     }
 
     model = cl.model_precache[modnum];
@@ -590,38 +598,16 @@ CL_ParseUpdate(unsigned int bits)
 	    if (model->synctype == ST_RAND)
 		ent->syncbase = (float)(rand() & 0x7fff) / 0x7fff;
 	    else
-		ent->syncbase = 0.0;
-	} else
+		ent->syncbase = 0.0f;
+	} else {
 	    forcelink = true;	// hack to make null model players work
-
+        }
 #ifdef GLQUAKE
 	if (num > 0 && num <= cl.maxclients)
 	    R_TranslatePlayerSkin(num - 1);
 #endif
-    }
 
-    /* MOVEMENT LERP INFO - could I just extend baseline instead? */
-    if (!VectorCompare(ent->msg_origins[0], ent->currentorigin)) {
-	if (ent->currentorigintime) {
-	    VectorCopy(ent->currentorigin, ent->previousorigin);
-	    ent->previousorigintime = ent->currentorigintime;
-	} else {
-	    VectorCopy(ent->msg_origins[0], ent->previousorigin);
-	    ent->previousorigintime = cl.mtime[0];
-	}
-	VectorCopy(ent->msg_origins[0], ent->currentorigin);
-	ent->currentorigintime = cl.mtime[0];
-    }
-    if (!VectorCompare(ent->msg_angles[0], ent->currentangles)) {
-	if (ent->currentanglestime) {
-	    VectorCopy(ent->currentangles, ent->previousangles);
-	    ent->previousanglestime = ent->currentanglestime;
-	} else {
-	    VectorCopy(ent->msg_angles[0], ent->previousangles);
-	    ent->previousanglestime = cl.mtime[0];
-	}
-	VectorCopy(ent->msg_angles[0], ent->currentangles);
-	ent->currentanglestime = cl.mtime[0];
+        ent->lerp.flags |= LERP_RESETANIM; // Don't lerp if model changed
     }
 
     if (bits & U_NOLERP)
@@ -646,8 +632,8 @@ CL_ParseBaseline(entity_t *ent, unsigned int bits)
 {
     int i;
 
-    ent->baseline.modelindex = CL_ReadModelIndex(bits);
-    ent->baseline.frame = CL_ReadModelFrame(bits);
+    ent->baseline.modelindex = CL_ReadModelIndex(bits, msgtype_baseline);
+    ent->baseline.frame = CL_ReadModelFrame(bits, msgtype_baseline);
     ent->baseline.colormap = MSG_ReadByte();
     ent->baseline.skinnum = MSG_ReadByte();
     for (i = 0; i < 3; i++) {
@@ -656,7 +642,9 @@ CL_ParseBaseline(entity_t *ent, unsigned int bits)
     }
 
     if (cl.protocol == PROTOCOL_VERSION_FITZ && (bits & B_FITZ_ALPHA)) {
-	MSG_ReadByte(); // FIXME - TODO
+	ent->baseline.alpha = MSG_ReadByte();
+    } else {
+        ent->baseline.alpha = ENTALPHA_DEFAULT;
     }
 }
 
@@ -731,7 +719,7 @@ CL_ParseClientdata(void)
     }
 
     if (bits & SU_WEAPON)
-	i = CL_ReadModelIndex(0);
+	i = CL_ReadModelIndex(0, msgtype_clientdata);
     else
 	i = 0;
     if (cl.stats[STAT_WEAPON] != i) {
@@ -791,7 +779,13 @@ CL_ParseClientdata(void)
     if (bits & SU_FITZ_WEAPONFRAME2)
 	cl.stats[STAT_WEAPONFRAME] |= MSG_ReadByte() << 8;
     if (bits & SU_FITZ_WEAPONALPHA)
-	MSG_ReadByte(); // FIXME - TODO
+	cl.viewent.alpha = MSG_ReadByte();
+    else
+        cl.viewent.alpha = ENTALPHA_DEFAULT;
+
+    /* Check if weapon changed and reset lerp on viewmodel */
+    if (cl.viewent.model != cl.model_precache[cl.stats[STAT_WEAPON]])
+        cl.viewent.lerp.flags |= LERP_RESETANIM;
 }
 
 /*
@@ -799,9 +793,15 @@ CL_ParseClientdata(void)
 CL_NewTranslation
 =====================
 */
-void
+static void
 CL_NewTranslation(int slot)
 {
+#ifdef GLQUAKE
+    if (slot > MAX_CLIENTS)
+	Sys_Error("%s: slot > MAX_CLIENTS", __func__);
+
+    R_TranslatePlayerSkin(slot);
+#else
     int i, j;
     int top, bottom;
     byte *dest, *source;
@@ -813,12 +813,10 @@ CL_NewTranslation(int slot)
     memcpy(dest, vid.colormap, sizeof(cl.players[slot].translations));
     top = cl.players[slot].topcolor;
     bottom = cl.players[slot].bottomcolor;
-#ifdef GLQUAKE
-    R_TranslatePlayerSkin(slot);
-#endif
 
     for (i = 0; i < VID_GRADES; i++, dest += 256, source += 256) {
-	if (top < 128)		// the artists made some backwards ranges.  sigh.
+        /* the artists made some backwards ranges.  sigh. */
+	if (top < 128)
 	    memcpy(dest + TOP_RANGE, source + top, 16);
 	else
 	    for (j = 0; j < 16; j++)
@@ -830,6 +828,7 @@ CL_NewTranslation(int slot)
 	    for (j = 0; j < 16; j++)
 		dest[BOTTOM_RANGE + j] = source[bottom + 15 - j];
     }
+#endif
 }
 
 /*
@@ -850,26 +849,14 @@ CL_ParseStatic(unsigned int bits)
     cl.num_statics++;
     CL_ParseBaseline(ent, bits);
 
-// copy it to the current state
+    /* Copy it to the current state */
     ent->model = cl.model_precache[ent->baseline.modelindex];
+    ent->lerp.flags |= LERP_RESETANIM;
     ent->frame = ent->baseline.frame;
     ent->colormap = vid.colormap;
     ent->skinnum = ent->baseline.skinnum;
     ent->effects = ent->baseline.effects;
-
-    /* Initilise frames for model lerp */
-    ent->currentframe = ent->baseline.frame;
-    ent->previousframe = ent->baseline.frame;
-    ent->currentframetime = cl.time;
-    ent->previousframetime = cl.time;
-
-    /* Initialise movelerp data */
-    ent->previousorigintime = cl.time;
-    ent->currentorigintime = cl.time;
-    VectorCopy(ent->baseline.origin, ent->previousorigin);
-    VectorCopy(ent->baseline.origin, ent->currentorigin);
-    VectorCopy(ent->baseline.angles, ent->previousangles);
-    VectorCopy(ent->baseline.angles, ent->currentangles);
+    ent->alpha = ent->baseline.alpha;
 
     VectorCopy(ent->baseline.origin, ent->origin);
     VectorCopy(ent->baseline.angles, ent->angles);
@@ -940,6 +927,26 @@ SHOWNET(const char *msg)
 	Con_Printf("%3i:%s\n", msg_readcount - 1, msg);
 }
 
+
+#ifndef GLQUAKE
+// Read and discard fog messages in the software renderer
+void
+Fog_ParseServerMessage()
+{
+    MSG_ReadByte();  // density
+    MSG_ReadByte();  // red
+    MSG_ReadByte();  // green
+    MSG_ReadByte();  // blue
+    MSG_ReadShort(); // time
+}
+// Read and discard skybox messages
+qboolean
+Sky_LoadSkyboxTextures(const char *skyboxname)
+{
+    MSG_ReadString();
+    return false;
+}
+#endif
 
 /*
 =====================
@@ -1053,7 +1060,7 @@ CL_ParseServerMessage(void)
 		Sys_Error("svc_lightstyle > MAX_LIGHTSTYLES");
 	    stylemap = MSG_ReadString();
 	    style = cl_lightstyle + stylenum;
-	    snprintf(style->map, MAX_STYLESTRING, "%s", stylemap);
+	    qsnprintf(style->map, MAX_STYLESTRING, "%s", stylemap);
 	    style->length = strlen(style->map);
 	    break;
 
@@ -1075,7 +1082,7 @@ CL_ParseServerMessage(void)
 		Host_Error("%s: svc_updatename > MAX_SCOREBOARD", __func__);
 	    name = MSG_ReadString();
 	    player = cl.players + playernum;
-	    snprintf(player->name, MAX_SCOREBOARDNAME, "%s", name);
+	    qsnprintf(player->name, MAX_SCOREBOARDNAME, "%s", name);
 	    break;
 
 	case svc_updatefrags:
@@ -1209,21 +1216,16 @@ CL_ParseServerMessage(void)
 	    break;
 
 	/* Various FITZ protocol messages - FIXME - !protocol => Host_Error */
-	case svc_fitz_skybox:
-	    MSG_ReadString(); // FIXME - TODO
-	    break;
+        case svc_fitz_skybox:
+            Sky_LoadSkyboxTextures(MSG_ReadString());
+            break;
 
 	case svc_fitz_bf:
 	    Cmd_ExecuteString("bf", src_command);
 	    break;
 
 	case svc_fitz_fog:
-	    /* FIXME - TODO */
-	    MSG_ReadByte(); // density
-	    MSG_ReadByte(); // red
-	    MSG_ReadByte(); // green
-	    MSG_ReadByte(); // blue
-	    MSG_ReadShort(); // time
+            Fog_ParseServerMessage();
 	    break;
 
 	default:

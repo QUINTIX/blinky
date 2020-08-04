@@ -539,9 +539,9 @@ Con_DrawDLBar(void)
     totalchars = qmin(con_linewidth - 2, (int)sizeof(dlbar) - 1);
 
     if (strlen(dlname) > namespace) {
-	len = snprintf(buf, bufspace, "%.*s... ", namespace - 2, dlname);
+	len = qsnprintf(buf, bufspace, "%.*s... ", namespace - 2, dlname);
     } else {
-	len = snprintf(buf, bufspace, "%-*s ", namespace + 1, dlname);
+	len = qsnprintf(buf, bufspace, "%-*s ", namespace + 1, dlname);
     }
     buf += len;
     totalchars -= len;
@@ -556,7 +556,7 @@ Con_DrawDLBar(void)
 	    *buf++ = '\x81';
     }
     *buf++ = '\x82';
-    snprintf(buf, 6, " %3d%%", cls.downloadpercent);
+    qsnprintf(buf, 6, " %3d%%", cls.downloadpercent);
 
     /* draw it */
     Draw_String(8, con_vislines - 22 + 8, dlbar);

@@ -67,33 +67,43 @@ extern float d_sdivzstepu, d_tdivzstepu, d_zistepu;
 extern float d_sdivzstepv, d_tdivzstepv, d_zistepv;
 extern float d_sdivzorigin, d_tdivzorigin, d_ziorigin;
 
-fixed16_t sadjust, tadjust;
-fixed16_t bbextents, bbextentt;
-
+extern fixed16_t sadjust, tadjust;
+extern fixed16_t bbextents, bbextentt;
 
 void D_DrawSpans8(espan_t *pspans);
+void D_DrawSpans8_Translucent(espan_t *pspans);
+void D_DrawSpans8_Fence(espan_t *pspans);
+void D_DrawSpans8_Fence_Translucent(espan_t *pspans);
 void D_DrawSpans16(espan_t *pspans);
 extern void (*D_DrawSpans)(espan_t *pspan);
 
 void D_DrawZSpans(espan_t *pspans);
-void Turbulent8(espan_t *pspan);
 void D_SpriteDrawSpans(sspan_t * pspan);
+
+void Turbulent8(espan_t *pspan);
+void D_DrawTurbulent8Span();
+void D_DrawTurbulent8Span_NonStd();
+void D_DrawTurbulentTranslucent8Span();
+void D_DrawTurbulentTranslucent8Span_NonStd();
 
 void D_DrawSkyScans8(espan_t *pspan);
 void D_DrawSkyScans16(espan_t *pspan);
 
 void R_ShowSubDiv(void);
-void (*prealspandrawer) (void);
+extern void (*prealspandrawer) (void);
 surfcache_t *D_CacheSurface(const entity_t *e, msurface_t *surface,
 			    int miplevel);
 
 #ifdef USE_X86_ASM
-extern void D_PolysetAff8Start(void);
-extern void D_PolysetAff8End(void);
+void D_PolysetAff8Start(void);
+void D_PolysetAff8End(void);
+void D_PolysetDrawSpans8_Translucent();
 #endif
 
 extern short *d_pzbuffer;
 extern unsigned int d_zrowbytes, d_zwidth;
+extern const byte *r_transtable;
+extern void (*D_DrawTurbSpanFunc)(void);
 
 extern int *d_pscantable;
 extern int d_scantable[MAXHEIGHT];

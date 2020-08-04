@@ -23,6 +23,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 // protocol.h -- communications protocols
 
+#include "mathlib.h"
+#include "model.h"
 #include "qtypes.h"
 
 #define PROTOCOL_VERSION_NQ   15
@@ -100,13 +102,25 @@ max_sounds(int p)
     return qmax(max_sounds_dynamic(p), max_sounds_static(p));
 }
 
+/*
+ * Used to differentiate the type of message when calling into
+ * CL_ReadModelIndex, CL_ReadModelFrame, etc. which have different
+ * flags for extended model/frame ranges depending on the message
+ * type.
+ */
+typedef enum {
+    msgtype_baseline,
+    msgtype_clientdata,
+    msgtype_update,
+} msgtype_t;
+
 // if the high bit of the servercmd is set, the low bits are fast update flags:
 #define	U_MOREBITS	(1<<0)
 #define	U_ORIGIN1	(1<<1)
 #define	U_ORIGIN2	(1<<2)
 #define	U_ORIGIN3	(1<<3)
 #define	U_ANGLE2	(1<<4)
-#define	U_NOLERP	(1<<5)	// don't interpolate movement
+#define	U_NOLERP	(1<<5)	// don't interpolate movement (MOVETYPE_STEP)
 #define	U_FRAME		(1<<6)
 #define U_SIGNAL	(1<<7)	// just differentiates from other updates
 
@@ -120,12 +134,12 @@ max_sounds(int p)
 #define	U_LONGENTITY	(1<<14)
 
 // Extra FITZ bits
-#define U_FITZ_EXTEND1  (1<<15)
-#define U_FITZ_ALPHA    (1<<16) // alpha byte follows
-#define U_FITZ_FRAME2   (1<<17) // byte for frame high bits follows
-#define U_FITZ_MODEL2   (1<<18) // byte for model high bits follows
-#define U_FITZ_LERPFINISH (1<<19)
-#define U_FITZ_EXTEND2  (1<<23)
+#define U_FITZ_EXTEND1    (1<<15)
+#define U_FITZ_ALPHA      (1<<16) // alpha byte follows
+#define U_FITZ_FRAME2     (1<<17) // byte for frame high bits follows
+#define U_FITZ_MODEL2     (1<<18) // byte for model high bits follows
+#define U_FITZ_LERPFINISH (1<<19) // 0-255 maps to 0.0 - 1.0, assume 0.1 if not present.
+#define U_FITZ_EXTEND2    (1<<23)
 
 #define	SU_VIEWHEIGHT	(1<<0)
 #define	SU_IDEALPITCH	(1<<1)
@@ -169,6 +183,14 @@ max_sounds(int p)
 #define B_FITZ_LARGEMODEL (1<<0)
 #define B_FITZ_LARGEFRAME (1<<1)
 #define B_FITZ_ALPHA      (1<<2)
+
+// FITZ alpha encoding
+#define ENTALPHA_DEFAULT   0 // Zero means default, either opaque or e.g. wateralpha setting
+#define ENTALPHA_ZERO      1 // Completely transparent
+#define ENTALPHA_ONE     255 // Completely opaque
+#define ENTALPHA_ENCODE(a) ((a) ? (byte)roundf(qclamp((float)(a) * 254 + 1, 1.0f, 255.0f)) : ENTALPHA_DEFAULT)
+#define ENTALPHA_DECODE(a) ((a) == ENTALPHA_DEFAULT ? 1.0f : ((float)(a) - 1.0f) / 254.0f)
+#define ENTALPHA_TOSAVE(a) ((a) == ENTALPHA_DEFAULT ? 0.0f : ((a) == ENTALPHA_ZERO ? -1.0f : ((float)(a) - 1.0f) / 254.0f))
 
 // defaults for clientinfo messages
 #define	DEFAULT_VIEWHEIGHT	22

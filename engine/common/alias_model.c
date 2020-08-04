@@ -18,6 +18,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
+#include <float.h>
+#include <math.h>
 #include <string.h>
 
 #include "common.h"
@@ -44,7 +46,7 @@ Mod_LoadAliasFrame(aliashdr_t *aliashdr, void *buffer,
     float *intervals = (float *)((byte *)aliashdr + aliashdr->poseintervals);
     int i;
 
-    snprintf(frame->name, sizeof(frame->name), "%s", dframe->name);
+    qsnprintf(frame->name, sizeof(frame->name), "%s", dframe->name);
     frame->firstpose = posedata->numposes;
     frame->numposes = 1;
     for (i = 0; i < 3; i++) {
@@ -87,7 +89,7 @@ Mod_LoadAliasFrameGroup(aliashdr_t *aliashdr, void *buffer,
 
     /* Group frames start after the interval data */
     dframe = (const daliasframe_t *)&group->intervals[frame->numposes];
-    snprintf(frame->name, sizeof(frame->name), "%s", dframe->name);
+    qsnprintf(frame->name, sizeof(frame->name), "%s", dframe->name);
 
     vert = &posedata->verts[posedata->numposes];
     interval += posedata->numposes;
@@ -133,6 +135,41 @@ Mod_LoadAliasFrames(aliashdr_t *aliashdr, void *buffer,
     }
 
     return buffer;
+}
+
+/*
+ * Calculate the model bounding box from the pose data
+ */
+static void
+Mod_CalculateAliasModelBounds(model_t *model, const aliashdr_t *aliashdr)
+{
+    vec3_t v, mins, maxs;
+    float radius, xy_radius, dist;
+    int i, j, numverts;
+    const trivertx_t *pv;
+
+    radius = xy_radius = 0;
+    mins[0] = mins[1] = mins[2] = FLT_MAX;
+    maxs[0] = maxs[1] = maxs[2] = -FLT_MAX;
+
+    numverts = aliashdr->numposes *  aliashdr->numverts;
+    pv = (const trivertx_t *)((const byte *)aliashdr + aliashdr->posedata);
+    for (i = 0; i < numverts; i++, pv++) {
+	for (j = 0; j < 3; j++) {
+	    v[j] = pv->v[j] * aliashdr->scale[j] + aliashdr->scale_origin[j];
+	    mins[j] = qmin(mins[j], v[j]);
+	    maxs[j] = qmax(maxs[j], v[j]);
+	}
+	dist = v[0] * v[0] + v[1] * v[1];
+	xy_radius = qmax(xy_radius, dist);
+	dist += v[2] * v[2];
+	radius = qmax(radius, dist);
+    }
+
+    VectorCopy(mins, model->mins);
+    VectorCopy(maxs, model->maxs);
+    model->xy_radius = sqrtf(xy_radius);
+    model->radius = sqrtf(radius);
 }
 
 /*
@@ -201,7 +238,7 @@ Mod_LoadAliasSkins
 ===============
 */
 static void *
-Mod_LoadAliasSkins(aliashdr_t *aliashdr, const model_loader_t *loader,
+Mod_LoadAliasSkins(aliashdr_t *aliashdr, const alias_loader_t *loader,
 		   model_t *model, void *buffer,
 		   alias_skindata_t *skindata)
 {
@@ -332,15 +369,15 @@ Mod_AliasLoaderAlloc(const mdl_t *mdl, alias_meshdata_t *meshdata,
 	}
     }
     skindata->numskins = count; /* to be incremented as data is filled in */
-    skindata->data = Hunk_Alloc(count * sizeof(byte *));
+    skindata->data = Hunk_AllocName(count * sizeof(byte *), "modeltmp");
 
     /* Verticies and triangles are simple */
     numverts = LittleLong(mdl->numverts);
     buffer = (const byte *)buffer + numverts * sizeof(stvert_t);
     count = LittleLong(mdl->numtris);
     buffer = (const byte *)buffer + count * sizeof(dtriangle_t);
-    meshdata->stverts = Hunk_Alloc(numverts * sizeof(*meshdata->stverts));
-    meshdata->triangles = Hunk_Alloc(count * sizeof(*meshdata->triangles));
+    meshdata->stverts = Hunk_AllocName(numverts * sizeof(*meshdata->stverts), "modeltmp");
+    meshdata->triangles = Hunk_AllocName(count * sizeof(*meshdata->triangles), "modeltmp");
 
     /* Expand frame groups to get total pose count */
     count = 0;
@@ -362,7 +399,7 @@ Mod_AliasLoaderAlloc(const mdl_t *mdl, alias_meshdata_t *meshdata,
 	}
     }
     posedata->numposes = count;
-    posedata->verts = Hunk_Alloc(count * sizeof(trivertx_t *));
+    posedata->verts = Hunk_AllocName(count * sizeof(trivertx_t *), "modeltmp");
 }
 
 /*
@@ -371,7 +408,7 @@ Mod_LoadAliasModel
 =================
 */
 void
-Mod_LoadAliasModel(const model_loader_t *loader, model_t *model, void *buffer)
+Mod_LoadAliasModel(const alias_loader_t *loader, model_t *model, void *buffer, size_t buffersize)
 {
     const mdl_t *mdl = buffer;
     aliashdr_t *aliashdr;
@@ -393,7 +430,7 @@ Mod_LoadAliasModel(const model_loader_t *loader, model_t *model, void *buffer)
 		  model->name, version, ALIAS_VERSION);
 
     /* Before any swapping, CRC models for QW client */
-    Mod_AliasCRC(model, buffer, com_filesize);
+    Mod_AliasCRC(model, buffer, buffersize);
 
     /* Allocate loader temporary space */
     lowmark = Hunk_LowMark();
@@ -404,7 +441,7 @@ Mod_LoadAliasModel(const model_loader_t *loader, model_t *model, void *buffer)
      * Leave pad bytes above the header for driver specific data.
      */
     start = Hunk_LowMark();
-    pad = loader->Aliashdr_Padding();
+    pad = loader->Padding();
     memsize = pad + sizeof(aliashdr_t);
     memsize += LittleLong(mdl->numframes) * sizeof(aliashdr->frames[0]);
     membase = Mod_AllocName(memsize, model->name);
@@ -448,11 +485,10 @@ Mod_LoadAliasModel(const model_loader_t *loader, model_t *model, void *buffer)
     buffer = Mod_LoadAliasTriangles(aliashdr, buffer, &meshdata, model);
     buffer = Mod_LoadAliasFrames(aliashdr, buffer, &posedata);
 
-// FIXME: do this right
-    model->mins[0] = model->mins[1] = model->mins[2] = -16;
-    model->maxs[0] = model->maxs[1] = model->maxs[2] = 16;
+    /* Fill in the bounds used for frustum culling */
+    Mod_CalculateAliasModelBounds(model, aliashdr);
 
-    /* Get the driver to save the mesh data */
+    /* Get the driver to save the mesh data (must be after skins, for texcoords!) */
     loader->LoadMeshData(model, aliashdr, &meshdata, &posedata);
 
     /* move the complete, relocatable alias model to the cache */

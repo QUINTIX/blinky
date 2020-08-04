@@ -27,19 +27,36 @@ TARGET_UNIX      ?= $(if $(filter UNIX,$(TARGET_OS)),$(HOST_UNIX),)
 
 # ============================================================================
 
-TYR_RELEASE := v0.62-pre
+TYR_RELEASE := v0.66
 TYR_GIT := $(shell git describe --dirty 2> /dev/null)
 TYR_VERSION := $(if $(TYR_GIT),$(TYR_GIT),$(TYR_RELEASE))
 TYR_VERSION_NUM ?= $(patsubst v%,%,$(TYR_VERSION))
 
+# Ensure the build directory exists
+$(shell if [ ! -d "$(BUILD_DIR)" ]; then mkdir -p "$(BUILD_DIR)"; fi)
+
 # Create/update the build version file
 # Any source files which use TYR_VERSION will depend on this
-BUILD_VER = $(BUILD_DIR)/.build_version
+BUILD_VERSION_FILE = $(BUILD_DIR)/.build_version
 $(shell \
-	if [ ! -d "$(BUILD_DIR)" ]; then mkdir -p "$(BUILD_DIR)"; fi ; \
-	if [ ! -f "$(BUILD_VER)" ] || \
-	   [ "`cat $(BUILD_VER)`" != "$(TYR_VERSION)" ]; then \
-		printf '%s' "$(TYR_VERSION)" > "$(BUILD_VER)"; \
+	if [ ! -f "$(BUILD_VERSION_FILE)" ] || \
+	   [ "`cat $(BUILD_VERSION_FILE)`" != "$(TYR_VERSION)" ]; then \
+		printf '%s' "$(TYR_VERSION)" > "$(BUILD_VERSION_FILE)"; \
+	fi)
+
+# Create/update the build version time file
+# Any source files which use TYR_VERSION_TIME will depend on this
+TYR_VERSION_TIME := $(shell \
+	if [ -n "$(TYR_GIT)" ] && [ -z "$$(git status -s -uno)" ]; then \
+		git show -s --pretty='format:%at'; \
+	else \
+		date +%s; \
+	fi)
+BUILD_VERSION_TIME_FILE = $(BUILD_DIR)/.build_version_time
+$(shell \
+	if [ ! -f "$(BUILD_VERSION_TIME_FILE)" ] || \
+	   [ "`cat $(BUILD_VERSION_TIME_FILE)`" != "$(TYR_VERSION_TIME)" ]; then \
+		printf '%s' "$(TYR_VERSION_TIME)" > "$(BUILD_VERSION_TIME_FILE)"; \
 	fi)
 
 # ---------------------------------------
@@ -157,13 +174,13 @@ GROFF ?= groff
 
 # Now that defaults are set, if we are using SDL set the CFLAGS/LFLAGS
 ifneq (,$(filter sdl,$(VID_TARGET) $(SND_TARGET) $(IN_TARGET)))
-ifeq (,$(filter-out UNIX,$(TARGET_OS))$(filter-out darwin,$(TARGET_UNIX)))
-SDL_CFLAGS_DEFAULT := -iquote /Library/Frameworks/SDL2.framework/Versions/Current/Headers
-SDL_LFLAGS_DEFAULT := -framework SDL2
-else
+# ifeq (,$(filter-out UNIX,$(TARGET_OS))$(filter-out darwin,$(TARGET_UNIX)))
+#SDL_CFLAGS_DEFAULT := -iquote /Library/Frameworks/SDL2.framework/Versions/Current/Headers
+#SDL_LFLAGS_DEFAULT := -framework SDL2
+# else
 SDL_CFLAGS_DEFAULT := $(shell sdl2-config --cflags)
 SDL_LFLAGS_DEFAULT := $(shell sdl2-config --libs)
-endif
+#endif
 SDL_CFLAGS ?= $(SDL_CFLAGS_DEFAULT)
 SDL_LFLAGS ?= $(SDL_LFLAGS_DEFAULT)
 endif
@@ -623,6 +640,7 @@ $(info .  USE_XF86DGA = $(USE_XF86DGA))
 # --------------------------------------------------------------------------
 
 COMMON_OBJS := \
+	buildinfo.o	\
 	cmd.o		\
 	common.o	\
 	crc.o		\
@@ -645,7 +663,9 @@ CL_OBJS := \
 	fisheye.o	\
 	keys.o		\
 	menu.o		\
+	pcx.o 		\
 	r_efrag.o	\
+	r_lerp.o	\
 	r_light.o	\
 	r_model.o	\
 	r_part.o	\
@@ -750,6 +770,7 @@ QWSV_OBJS := \
 
 # Defines
 COMMON_CPPFLAGS += -DTYR_VERSION=$(TYR_VERSION_NUM) -DQBASEDIR="$(QBASEDIR)"
+COMMON_CPPFLAGS += -DTYR_VERSION_TIME=$(TYR_VERSION_TIME)LL
 NQCL_CPPFLAGS   += -DNQ_HACK
 QW_CPPFLAGS     += -DQW_HACK
 QWSV_CPPFLAGS   += -DSERVERONLY

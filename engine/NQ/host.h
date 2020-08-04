@@ -27,8 +27,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 // FIXME - some of this is out of place or badly named...
 
-extern wad_t host_gfx; /* "gfx.wad" */
-
 extern quakeparms_t host_parms;
 
 extern cvar_t sys_ticrate;
@@ -39,6 +37,8 @@ extern qboolean host_initialized;	// true if into command execution
 extern double host_frametime;
 extern byte *host_basepal;
 extern byte *host_colormap;
+extern byte **host_transtables;
+
 extern int host_framecount;	// incremented every frame, never reset
 extern double realtime;		// not bounded in any way, changed at
 
@@ -59,11 +59,7 @@ void Host_ClientCommands(client_t *client, const char *fmt, ...)
     __attribute__((format(printf,2,3)));
 void Host_ShutdownServer(qboolean crash);
 
-extern qboolean msg_suppress_1;	// suppresses resolution and cache size console
-
-				//  output an fullscreen DIB focus gain/loss
 extern int current_skill;	// skill level for currently loaded level (in
-
 				//  case the user changes the cvar while the
 				//  level is running, this reflects the level
 				//  actually in use)

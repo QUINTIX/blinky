@@ -23,34 +23,33 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "cmd.h"
 #include "console.h"
+#include "protocol.h"
 #include "quakedef.h"
 #include "r_local.h"
+#include "r_shared.h"
 #include "screen.h"
 #include "sound.h"
 #include "sys.h"
 #include "view.h"
 
+int r_maphunkmark;
+
 void *colormap;
 float r_time1;
-int r_numallocatededges;
 
 qboolean r_recursiveaffinetriangles = true;
 
 int r_pixbytes = 1;
 float r_aliasuvscale = 1.0;
-int r_outofsurfaces;
-int r_outofedges;
+qboolean r_surfaces_overflow;
+qboolean r_edges_overflow;
 
-static vec3_t viewlightvec;
-static alight_t r_viewlighting = { 128, 192, viewlightvec };
+edge_t *saveedges;
+surf_t *savesurfs;
 
 qboolean r_dowarp, r_dowarpold, r_viewchanged;
 
 int c_surf;
-int r_maxsurfsseen, r_maxedgesseen;
-
-static int r_cnumsurfs;
-static qboolean r_surfsonstack;
 
 byte *r_warpbuffer;
 
@@ -75,8 +74,6 @@ float xscale, yscale;
 float xscaleinv, yscaleinv;
 float xscaleshrink, yscaleshrink;
 float aliasxscale, aliasyscale, aliasxcenter, aliasycenter;
-
-int screenwidth;
 
 float pixelAspect;
 static float screenAspect;
@@ -113,8 +110,6 @@ cvar_t r_drawentities = { "r_drawentities", "1" };
 cvar_t r_drawviewmodel = { "r_drawviewmodel", "1" };
 cvar_t r_drawflat = { "r_drawflat", "0" };
 cvar_t r_ambient = { "r_ambient", "0" };
-cvar_t r_numsurfs = { "r_numsurfs", "0" };
-cvar_t r_numedges = { "r_numedges", "0" };
 
 cvar_t r_lockpvs = { "r_lockpvs", "0" };
 cvar_t r_lockfrustum = { "r_lockfrustum", "0" };
@@ -133,10 +128,8 @@ static cvar_t r_zgraph = { "r_zgraph", "0" };
 static cvar_t r_timegraph = { "r_timegraph", "0" };
 static cvar_t r_aliasstats = { "r_polymodelstats", "0" };
 static cvar_t r_dspeeds = { "r_dspeeds", "0" };
-static cvar_t r_reportsurfout = { "r_reportsurfout", "0" };
-static cvar_t r_maxsurfs = { "r_maxsurfs", "0" };
-static cvar_t r_reportedgeout = { "r_reportedgeout", "0" };
-static cvar_t r_maxedges = { "r_maxedges", "0" };
+static cvar_t r_maxsurfs = { "r_maxsurfs", stringify(MINSURFACES) };
+static cvar_t r_maxedges = { "r_maxedges", stringify(MINEDGES) };
 static cvar_t r_aliastransbase = { "r_aliastransbase", "200" };
 static cvar_t r_aliastransadj = { "r_aliastransadj", "100" };
 
@@ -187,10 +180,8 @@ R_InitTurb(void)
     int i;
 
     for (i = 0; i < TURB_TABLE_SIZE; ++i) {
-	sintable[i] = TURB_SURF_AMP
-	    + sin(i * 3.14159 * 2 / TURB_CYCLE) * TURB_SURF_AMP;
-	intsintable[i] = TURB_SCREEN_AMP
-	    + sin(i * 3.14159 * 2 / TURB_CYCLE) * TURB_SCREEN_AMP;
+	sintable[i]    = TURB_SURF_AMP   + sin(i * 3.14159 * 2 / TURB_CYCLE) * TURB_SURF_AMP;
+	intsintable[i] = TURB_SCREEN_AMP + sin(i * 3.14159 * 2 / TURB_CYCLE) * TURB_SCREEN_AMP;
     }
 }
 
@@ -222,12 +213,9 @@ R_Init(void)
     Cvar_RegisterVariable(&r_drawviewmodel);
     Cvar_RegisterVariable(&r_drawflat);
     Cvar_RegisterVariable(&r_ambient);
-    Cvar_RegisterVariable(&r_numsurfs);
-    Cvar_RegisterVariable(&r_numedges);
-#ifdef NQ_HACK
+
     Cvar_RegisterVariable(&r_lerpmodels);
     Cvar_RegisterVariable(&r_lerpmove);
-#endif
     Cvar_RegisterVariable(&r_lockpvs);
     Cvar_RegisterVariable(&r_lockfrustum);
 
@@ -236,9 +224,7 @@ R_Init(void)
     Cvar_RegisterVariable(&r_timegraph);
     Cvar_RegisterVariable(&r_aliasstats);
     Cvar_RegisterVariable(&r_dspeeds);
-    Cvar_RegisterVariable(&r_reportsurfout);
     Cvar_RegisterVariable(&r_maxsurfs);
-    Cvar_RegisterVariable(&r_reportedgeout);
     Cvar_RegisterVariable(&r_maxedges);
     Cvar_RegisterVariable(&r_aliastransbase);
     Cvar_RegisterVariable(&r_aliastransadj);
@@ -248,20 +234,21 @@ R_Init(void)
     Cvar_RegisterVariable(&r_zgraph);
 #endif
 
-    Cvar_SetValue("r_maxedges", (float)NUMSTACKEDGES);
-    Cvar_SetValue("r_maxsurfs", (float)NUMSTACKSURFACES);
+    Cvar_RegisterVariable(&r_wateralpha);
+    Cvar_RegisterVariable(&r_slimealpha);
+    Cvar_RegisterVariable(&r_lavaalpha);
+    Cvar_RegisterVariable(&r_telealpha);
 
     view_clipplanes[0].leftedge = true;
     view_clipplanes[1].rightedge = true;
-    view_clipplanes[1].leftedge = view_clipplanes[2].leftedge =
-	view_clipplanes[3].leftedge = false;
-    view_clipplanes[0].rightedge = view_clipplanes[2].rightedge =
-	view_clipplanes[3].rightedge = false;
+    view_clipplanes[1].leftedge = view_clipplanes[2].leftedge = view_clipplanes[3].leftedge = false;
+    view_clipplanes[0].rightedge = view_clipplanes[2].rightedge = view_clipplanes[3].rightedge = false;
 
     r_refdef.xOrigin = XCENTERING;
     r_refdef.yOrigin = YCENTERING;
 
     R_InitParticles();
+    R_InitTranslationTable();
 
 // TODO: collect 386-specific code in one place
 #ifdef USE_X86_ASM
@@ -269,6 +256,22 @@ R_Init(void)
 #endif
 
     D_Init();
+}
+
+static void
+R_HunkAllocSurfaces()
+{
+    auxsurfaces = Hunk_AllocName(r_numsurfaces * sizeof(surf_t), "surfaces");
+    surface_p = surfaces;
+    surf_max = &surfaces[r_numsurfaces];
+    surfaces = auxsurfaces - 1;
+    R_SurfacePatch();
+}
+
+static void
+R_HunkAllocEdges()
+{
+    auxedges = Hunk_AllocName(r_numedges * sizeof(edge_t), "edges");
 }
 
 /*
@@ -292,41 +295,32 @@ R_NewMap(void)
     r_viewleaf = NULL;
     R_ClearParticles();
 
-    r_cnumsurfs = r_maxsurfs.value;
+    /* Edge rendering resources */
+    r_numsurfaces = qmax((int)r_maxsurfs.value, MINSURFACES);
+    r_numedges = qmax((int)r_maxedges.value, MINEDGES);
 
-    if (r_cnumsurfs <= MINSURFACES)
-	r_cnumsurfs = MINSURFACES;
-
-    if (r_cnumsurfs > NUMSTACKSURFACES) {
-	surfaces = Hunk_AllocName(r_cnumsurfs * sizeof(surf_t), "surfaces");
-	surface_p = surfaces;
-	surf_max = &surfaces[r_cnumsurfs];
-	r_surfsonstack = false;
-	// surface 0 doesn't really exist; it's just a dummy because index 0
-	// is used to indicate no edge attached to surface
-	surfaces--;
-	R_SurfacePatch();
-    } else {
-	r_surfsonstack = true;
-    }
-
-    r_maxedgesseen = 0;
-    r_maxsurfsseen = 0;
-
-    r_numallocatededges = r_maxedges.value;
-
-    if (r_numallocatededges < MINEDGES)
-	r_numallocatededges = MINEDGES;
-
-    if (r_numallocatededges <= NUMSTACKEDGES) {
-	auxedges = NULL;
-    } else {
-	auxedges = Hunk_AllocName(r_numallocatededges * sizeof(edge_t),
-				  "edges");
-    }
+    /* brushmodel clipping */
+    r_numbclipverts = MIN_STACK_BMODEL_VERTS;
+    r_numbclipedges = MIN_STACK_BMODEL_EDGES;
 
     r_dowarpold = false;
     r_viewchanged = false;
+
+    Alpha_NewMap();
+
+    r_maphunkmark = Hunk_LowMark();
+
+    auxsurfaces = NULL;
+    if (r_numsurfaces > MAXSTACKSURFACES)
+        R_HunkAllocSurfaces();
+
+    auxedges = NULL;
+    if (r_numedges > MAXSTACKEDGES)
+        R_HunkAllocEdges();
+
+    /* extra space for saving surfs/edges for translucent surface rendering */
+    savesurfs = Hunk_AllocName(r_numsurfaces * sizeof(surf_t), "savesurf");
+    saveedges = Hunk_AllocName(r_numedges * sizeof(edge_t), "saveedge");
 }
 
 
@@ -336,11 +330,15 @@ R_SetVrect
 ===============
 */
 void
-R_SetVrect(const vrect_t *pvrectin, vrect_t *pvrect, int lineadj)
+R_SetVrect(const vrect_t *in, vrect_t *out, int lineadj)
 {
     int h;
     float size;
     qboolean full;
+
+    if (scr_scale != 1.0f) {
+        lineadj = (int)(lineadj * scr_scale);
+    }
 
 #ifdef NQ_HACK
     full = (scr_viewsize.value >= 120.0f);
@@ -359,30 +357,30 @@ R_SetVrect(const vrect_t *pvrectin, vrect_t *pvrect, int lineadj)
     size /= 100.0;
 
     if (full)
-	h = pvrectin->height;
+	h = in->height;
     else
-	h = pvrectin->height - lineadj;
+	h = in->height - lineadj;
 
-    pvrect->width = pvrectin->width * size;
-    if (pvrect->width < 96) {
-	size = 96.0 / pvrectin->width;
-	pvrect->width = 96;	// min for icons
+    out->width = in->width * size;
+    if (out->width < 96) {
+	size = 96.0 / in->width;
+	out->width = 96;	// min for icons
     }
-    pvrect->width &= ~7;
+    out->width &= ~7;
 
-    pvrect->height = pvrectin->height * size;
+    out->height = in->height * size;
     if (!full) {
-	if (pvrect->height > pvrectin->height - lineadj)
-	    pvrect->height = pvrectin->height - lineadj;
-    } else if (pvrect->height > pvrectin->height)
-	pvrect->height = pvrectin->height;
-    pvrect->height &= ~1;
+	if (out->height > in->height - lineadj)
+	    out->height = in->height - lineadj;
+    } else if (out->height > in->height)
+	out->height = in->height;
+    out->height &= ~1;
 
-    pvrect->x = (pvrectin->width - pvrect->width) / 2;
+    out->x = (in->width - out->width) / 2;
     if (full)
-	pvrect->y = 0;
+	out->y = 0;
     else
-	pvrect->y = (h - pvrect->height) / 2;
+	out->y = (h - out->height) / 2;
 }
 
 
@@ -395,32 +393,16 @@ Guaranteed to be called before the first refresh
 ===============
 */
 void
-R_ViewChanged(vrect_t *pvrect, int lineadj, float aspect)
+R_ViewChanged(const vrect_t *vrect, int lineadj, float aspect)
 {
     int i;
     float res_scale;
 
     r_viewchanged = true;
 
-    R_SetVrect(pvrect, &r_refdef.vrect, lineadj);
+    R_SetVrect(vrect, &r_refdef.vrect, lineadj);
 
-    extern qboolean fisheye_enabled;
-    if (fisheye_enabled) {
-
-        // Make render size a square
-        int minsize = r_refdef.vrect.width;
-        if (r_refdef.vrect.height < minsize)
-           minsize = r_refdef.vrect.height;
-        r_refdef.vrect.width = r_refdef.vrect.height = minsize;
-
-        // set fov
-        extern double fisheye_plate_fov;
-        r_refdef.horizontalFieldOfView = 2.0 * tan(fisheye_plate_fov / 2);
-    }
-    else {
-        r_refdef.horizontalFieldOfView = 2.0 * tan(r_refdef.fov_x / 360 * M_PI);
-    }
-
+    r_refdef.horizontalFieldOfView = 2.0 * tan(r_refdef.fov_x / 360 * M_PI);
     r_refdef.fvrectx = (float)r_refdef.vrect.x;
     r_refdef.fvrectx_adj = (float)r_refdef.vrect.x - 0.5;
     r_refdef.vrect_x_adj_shift20 = (r_refdef.vrect.x << 20) + (1 << 19) - 1;
@@ -446,12 +428,7 @@ R_ViewChanged(vrect_t *pvrect, int lineadj, float aspect)
     r_refdef.aliasvrectbottom =
 	r_refdef.aliasvrect.y + r_refdef.aliasvrect.height;
 
-    if (fisheye_enabled) {
-        pixelAspect = (float)r_refdef.vrect.height / r_refdef.vrect.width;
-    }
-    else {
-        pixelAspect = aspect;
-    }
+    pixelAspect = aspect;
     xOrigin = r_refdef.xOrigin;
     yOrigin = r_refdef.yOrigin;
 
@@ -514,9 +491,8 @@ R_ViewChanged(vrect_t *pvrect, int lineadj, float aspect)
     for (i = 0; i < 4; i++)
 	VectorNormalize(screenedge[i].normal);
 
-    res_scale =
-	sqrt((double)(r_refdef.vrect.width * r_refdef.vrect.height) /
-	     (320.0 * 152.0)) * (2.0 / r_refdef.horizontalFieldOfView);
+    res_scale =	sqrtf((r_refdef.vrect.width * r_refdef.vrect.height) /
+		      (320.0 * 152.0)) * (2.0 / r_refdef.horizontalFieldOfView);
     r_aliastransition = r_aliastransbase.value * res_scale;
     r_resfudge = r_aliastransadj.value * res_scale;
 
@@ -709,8 +685,7 @@ R_CullSubmodelSurfaces
 =============
 */
 static void
-R_CullSubmodelSurfaces(const brushmodel_t *submodel, const vec3_t vieworg,
-		       int clipflags)
+R_CullSubmodelSurfaces(const brushmodel_t *submodel, const vec3_t vieworg, int clipflags)
 {
     int i, j, side;
     msurface_t *surf;
@@ -721,6 +696,7 @@ R_CullSubmodelSurfaces(const brushmodel_t *submodel, const vec3_t vieworg,
     for (i = 0; i < submodel->nummodelsurfaces; i++, surf++) {
 	/* Clip the surface against the frustum */
 	surf->clipflags = clipflags;
+
 	for (j = 0; j < 4; j++) {
 	    if (!(surf->clipflags & (1 << j)))
 		continue;
@@ -753,6 +729,57 @@ R_CullSubmodelSurfaces(const brushmodel_t *submodel, const vec3_t vieworg,
     }
 }
 
+int
+R_LightPoint(const vec3_t point)
+{
+    surf_lightpoint_t lightpoint;
+    qboolean hit;
+
+    if (!cl.worldmodel->lightdata)
+	return 255;
+
+    hit = R_LightSurfPoint(point, &lightpoint);
+    if (!hit)
+        return 0;
+
+    const msurface_t *surf = lightpoint.surf;
+    const int surfwidth = (surf->extents[0] >> 4) + 1;
+    const int surfheight = (surf->extents[1] >> 4) + 1;
+    const int ds = qmin((int)floorf(lightpoint.s), surfwidth - 2);
+    const int dt = qmin((int)floorf(lightpoint.t), surfheight - 2);
+    const int surfbytes = surfwidth * surfheight;
+    const byte *row0 = surf->samples + (dt * surfwidth + ds);
+    const byte *row1 = row0 + surfwidth;
+    float samples[2][2];
+
+    /* Calculate a 2x2 sample, adding the light styles together */
+    memset(samples, 0, sizeof(samples));
+
+    int maps;
+    foreach_surf_lightstyle(surf, maps) {
+        const float scale = d_lightstylevalue[surf->styles[maps]] * (1.0f / 256.0f);
+        samples[0][0] += row0[0] * scale;
+        samples[0][1] += row0[1] * scale;
+        samples[1][0] += row1[0] * scale;
+        samples[1][1] += row1[1] * scale;
+        row0 += surfbytes;
+        row1 += surfbytes;
+    }
+
+    /* Interpolate within the 2x2 sample */
+    const float dsfrac = lightpoint.s - ds;
+    const float dtfrac = lightpoint.t - dt;
+    float weight00 = (1.0f - dsfrac) * (1.0f - dtfrac);
+    float weight01 = dsfrac * (1.0f - dtfrac);
+    float weight10 = (1.0f - dsfrac) * dtfrac;
+    float weight11 = dsfrac * dtfrac;
+
+    return floorf(samples[0][0] * weight00 +
+                  samples[0][1] * weight01 +
+                  samples[1][0] * weight10 +
+                  samples[1][1] * weight11);
+}
+
 /*
 =============
 R_DrawEntitiesOnList
@@ -761,82 +788,82 @@ R_DrawEntitiesOnList
 static void
 R_DrawEntitiesOnList(void)
 {
-    entity_t *e;
-    int i, j;
-    int lnum;
-    alight_t lighting;
-
-// FIXME: remove and do real lighting
-    float lightvec[3] = { -1, 0, 0 };
-    vec3_t dist;
-    float add;
+    int i;
+    entity_t *entity;
 
     if (!r_drawentities.value)
 	return;
 
     for (i = 0; i < cl_numvisedicts; i++) {
-	e = &cl_visedicts[i];
+	entity = cl_visedicts[i];
 #ifdef NQ_HACK
-	if (e == &cl_entities[cl.viewentity])
+	if (entity == &cl_entities[cl.viewentity])
 	    continue;		// don't draw the player
 #endif
-	switch (e->model->type) {
+
+        // Draw translucent entities separately
+        if (entity->alpha != ENTALPHA_DEFAULT && entity->alpha != ENTALPHA_ONE)
+            continue;
+
+	switch (entity->model->type) {
 	case mod_sprite:
-	    VectorCopy(e->origin, r_entorigin);
+	    VectorCopy(entity->origin, r_entorigin);
 	    VectorSubtract(r_origin, r_entorigin, modelorg);
-	    R_DrawSprite(e);
+	    R_DrawSprite(entity);
 	    break;
 
-	case mod_alias:
+        case mod_alias:
+            /*
+             * Allow drawing function to set up r_entorigin and
+             * modelorg internally, to properly account for lerping
+             */
+            R_AliasDrawModel(entity);
+	    break;
+
+	default:
+	    break;
+	}
+    }
+}
+
+/*
+=============
+R_DrawEntitiesOnList_Translucent
+=============
+*/
+static void
+R_DrawEntitiesOnList_Translucent(void)
+{
+    int i;
+    entity_t *entity;
+
+    if (!r_drawentities.value)
+	return;
+
+    for (i = 0; i < cl_numvisedicts; i++) {
+	entity = cl_visedicts[i];
 #ifdef NQ_HACK
-	    if (r_lerpmove.value) {
-		float delta = e->currentorigintime - e->previousorigintime;
-		float frac = qclamp((cl.time - e->currentorigintime) / delta, 0.0, 1.0);
-		vec3_t lerpvec;
-
-		/* FIXME - hack to skip the viewent (weapon) */
-		if (e == &cl.viewent)
-		    goto nolerp;
-
-		VectorSubtract(e->currentorigin, e->previousorigin, lerpvec);
-		VectorMA(e->previousorigin, frac, lerpvec, r_entorigin);
-	    } else
-	    nolerp:
+	if (entity == &cl_entities[cl.viewentity])
+	    continue;		// don't draw the player
 #endif
-	    {
-		VectorCopy(e->origin, r_entorigin);
-	    }
+
+        // Draw translucent entities only
+        if (entity->alpha == ENTALPHA_DEFAULT || entity->alpha == ENTALPHA_ONE)
+            continue;
+
+	switch (entity->model->type) {
+	case mod_sprite:
+	    VectorCopy(entity->origin, r_entorigin);
 	    VectorSubtract(r_origin, r_entorigin, modelorg);
+	    R_DrawSprite(entity);
+	    break;
 
-	    // see if the bounding box lets us trivially reject, also sets
-	    // trivial accept status
-	    if (R_AliasCheckBBox(e)) {
-		j = R_LightPoint(e->origin);
-
-		lighting.ambientlight = j;
-		lighting.shadelight = j;
-
-		lighting.plightvec = lightvec;
-
-		for (lnum = 0; lnum < MAX_DLIGHTS; lnum++) {
-		    if (cl_dlights[lnum].die >= cl.time) {
-			VectorSubtract(e->origin, cl_dlights[lnum].origin,
-				       dist);
-			add = cl_dlights[lnum].radius - Length(dist);
-
-			if (add > 0)
-			    lighting.ambientlight += add;
-		    }
-		}
-
-		// clamp lighting so it doesn't overbright as much
-		if (lighting.ambientlight > 128)
-		    lighting.ambientlight = 128;
-		if (lighting.ambientlight + lighting.shadelight > 192)
-		    lighting.shadelight = 192 - lighting.ambientlight;
-
-		R_AliasDrawModel(e, &lighting);
-	    }
+        case mod_alias:
+            /*
+             * Allow drawing function to set up r_entorigin and
+             * modelorg internally, to properly account for lerping
+             */
+            R_AliasDrawModel(entity);
 	    break;
 
 	default:
@@ -853,14 +880,7 @@ R_DrawViewModel
 static void
 R_DrawViewModel(void)
 {
-    entity_t *e;
-// FIXME: remove and do real lighting
-    float lightvec[3] = { -1, 0, 0 };
-    int j;
-    int lnum;
-    vec3_t dist;
-    float add;
-    dlight_t *dl;
+    entity_t *entity;
 
 #ifdef NQ_HACK
     if (!r_drawviewmodel.value)
@@ -877,48 +897,11 @@ R_DrawViewModel(void)
     if (cl.stats[STAT_HEALTH] <= 0)
 	return;
 
-    e = &cl.viewent;
-    if (!e->model)
+    entity = &cl.viewent;
+    if (!entity->model)
 	return;
 
-    VectorCopy(e->origin, r_entorigin);
-    VectorSubtract(r_origin, r_entorigin, modelorg);
-
-    VectorCopy(vup, viewlightvec);
-    VectorInverse(viewlightvec);
-
-    j = R_LightPoint(e->origin);
-
-    if (j < 24)
-	j = 24;			// always give some light on gun
-    r_viewlighting.ambientlight = j;
-    r_viewlighting.shadelight = j;
-
-// add dynamic lights
-    for (lnum = 0; lnum < MAX_DLIGHTS; lnum++) {
-	dl = &cl_dlights[lnum];
-	if (!dl->radius)
-	    continue;
-	if (!dl->radius)
-	    continue;
-	if (dl->die < cl.time)
-	    continue;
-
-	VectorSubtract(e->origin, dl->origin, dist);
-	add = dl->radius - Length(dist);
-	if (add > 0)
-	    r_viewlighting.ambientlight += add;
-    }
-
-// clamp lighting so it doesn't overbright as much
-    if (r_viewlighting.ambientlight > 128)
-	r_viewlighting.ambientlight = 128;
-    if (r_viewlighting.ambientlight + r_viewlighting.shadelight > 192)
-	r_viewlighting.shadelight = 192 - r_viewlighting.ambientlight;
-
-    r_viewlighting.plightvec = lightvec;
-
-    R_AliasDrawModel(e, &r_viewlighting);
+    R_AliasDrawModel(entity);
 }
 
 
@@ -928,8 +911,7 @@ R_ModelCheckBBox
 =============
 */
 static int
-R_ModelCheckBBox(const entity_t *e, model_t *model,
-		  const vec3_t mins, const vec3_t maxs)
+R_ModelCheckBBox(const entity_t *e, model_t *model, const vec3_t mins, const vec3_t maxs)
 {
     int i, side, clipflags;
     vec_t dist;
@@ -983,11 +965,11 @@ R_DrawBEntitiesOnList(void)
     r_dlightframecount = r_framecount;
 
     for (i = 0; i < cl_numvisedicts; i++) {
-	entity = &cl_visedicts[i];
-	if (entity->model->type != mod_brush)
+	entity = cl_visedicts[i];
+	model = entity->model;
+	if (model->type != mod_brush)
 	    continue;
 
-	model = entity->model;
 	brushmodel = BrushModel(model);
 
 	// see if the bounding box lets us trivially reject, also sets
@@ -995,24 +977,22 @@ R_DrawBEntitiesOnList(void)
 	VectorAdd(entity->origin, model->mins, mins);
 	VectorAdd(entity->origin, model->maxs, maxs);
 	clipflags = R_ModelCheckBBox(entity, model, mins, maxs);
-
 	if (clipflags == BMODEL_FULLY_CLIPPED)
-	    continue;
-
-	VectorCopy(entity->origin, r_entorigin);
-	VectorSubtract(r_origin, r_entorigin, modelorg);
+            continue;
 
 	// FIXME: stop transforming twice
+	VectorCopy(entity->origin, r_entorigin);
+	VectorSubtract(r_origin, r_entorigin, modelorg);
 	R_RotateBmodel(entity);
 
 	// calculate dynamic lighting for bmodel if it's not an
 	// instanced model
+        mnode_t *headnode = brushmodel->nodes + brushmodel->hulls[0].firstclipnode;
 	if (brushmodel->firstmodelsurface != 0) {
 	    for (j = 0; j < MAX_DLIGHTS; j++) {
 		if ((cl_dlights[j].die < cl.time) || (!cl_dlights[j].radius))
 		    continue;
-		R_MarkLights(&cl_dlights[j], 1 << j,
-			     brushmodel->nodes + brushmodel->hulls[0].firstclipnode);
+		R_MarkLights(&cl_dlights[j], 1 << j, headnode);
 	    }
 	}
 
@@ -1054,28 +1034,9 @@ R_DrawBEntitiesOnList(void)
 R_EdgeDrawing
 ================
 */
- __attribute__((noinline))
 static void
-R_EdgeDrawing(void)
+R_EdgeDrawingPrepare()
 {
-    edge_t ledges[CACHE_PAD_ARRAY(NUMSTACKEDGES, edge_t)];
-    surf_t lsurfs[CACHE_PAD_ARRAY(NUMSTACKSURFACES, surf_t)];
-
-    if (auxedges) {
-	r_edges = auxedges;
-    } else {
-	r_edges = CACHE_ALIGN_PTR(ledges);
-    }
-
-    if (r_surfsonstack) {
-	surfaces = CACHE_ALIGN_PTR(lsurfs);
-	surf_max = &surfaces[r_cnumsurfs];
-	// surface 0 doesn't really exist; it's just a dummy because index 0
-	// is used to indicate no edge attached to surface
-	surfaces--;
-	R_SurfacePatch();
-    }
-
     R_BeginEdgeFrame();
 
     if (r_dspeeds.value) {
@@ -1083,6 +1044,9 @@ R_EdgeDrawing(void)
     }
 
     R_RenderWorld();
+
+    // Once the world is done, mark where the bmodel surfs will be starting
+    bmodel_surfaces = surface_p;
 
     // only the world can be drawn back to front with no z reads or compares,
     // just z writes, so have the driver turn z compares on now
@@ -1105,8 +1069,6 @@ R_EdgeDrawing(void)
 	S_ExtraUpdate();	// don't let sound get messed up if going slow
 	VID_LockBuffer();
     }
-
-    R_ScanEdges();
 }
 
 
@@ -1117,10 +1079,14 @@ R_RenderView
 r_refdef must be set before the first call
 ================
 */
+__attribute__((noinline))
 static void
 R_RenderView_(void)
 {
     byte warpbuffer[WARP_WIDTH * WARP_HEIGHT];
+    scanflags_t scanflags;
+    int numsavesurfs, numsaveedges;
+    qboolean realloc, nostack;
 
     r_warpbuffer = warpbuffer;
 
@@ -1146,7 +1112,97 @@ R_RenderView_(void)
 	VID_LockBuffer();
     }
 
-    R_EdgeDrawing();
+    /*
+     * If we have to retry with more resources, we can't use the
+     * stack again on the second and subsequent passes. May be
+     * possible to go back to stack based next frame if we're still
+     * below MAX_STACK_*
+     */
+    nostack = false;
+
+ moar_surfedges:
+    // If we ran out of surfs/edges previously, bump the limits
+    realloc = false;
+    if (r_edges_overflow) {
+        if (r_numedges < MAX_EDGES_INCREMENT)
+            r_numedges *= 2;
+        else
+            r_numedges += MAX_EDGES_INCREMENT;
+
+        Con_DPrintf("edge limit bumped to %d\n", r_numedges);
+        r_edges_overflow = false;
+        realloc = true;
+    }
+    if (r_surfaces_overflow) {
+        if (r_numsurfaces < MAX_SURFACES_INCREMENT)
+            r_numsurfaces *= 2;
+        else
+            r_numsurfaces += MAX_SURFACES_INCREMENT;
+
+        Con_DPrintf("surface limit bumped to %d\n", r_numsurfaces);
+        r_surfaces_overflow = false;
+        realloc = true;
+    }
+
+    // Redo heap allocations it needed...
+    if (realloc) {
+        Hunk_FreeToLowMark(r_maphunkmark);
+
+        auxsurfaces = NULL;
+        if (r_numsurfaces > MAXSTACKSURFACES || nostack)
+            R_HunkAllocSurfaces();
+
+        auxedges = NULL;
+        if (r_numedges > MAXSTACKEDGES || nostack)
+            R_HunkAllocEdges();
+
+        /* surfs/edges for transparency */
+        savesurfs = Hunk_AllocName(r_numsurfaces * sizeof(surf_t), "savesurf");
+        saveedges = Hunk_AllocName(r_numedges * sizeof(edge_t), "saveedge");
+    }
+
+    /* If we can fit edges/surfs on the stack, allocate them now */
+    if (auxedges) {
+        r_edges = auxedges;
+    } else {
+        edge_t *stackedges = alloca(CACHE_PAD_ARRAY(r_numedges, edge_t) * sizeof(edge_t));
+        r_edges = CACHE_ALIGN_PTR(stackedges);
+    }
+    if (auxsurfaces) {
+        surfaces = auxsurfaces - 1;
+    } else {
+        surf_t *stacksurfs = alloca(CACHE_PAD_ARRAY(r_numsurfaces, surf_t) * sizeof(surf_t));
+        surfaces = CACHE_ALIGN_PTR(stacksurfs);
+        surf_max = &surfaces[r_numsurfaces];
+	// surface 0 doesn't really exist; it's just a dummy because index 0
+	// is used to indicate no edge attached to surface
+        surfaces--;
+        R_SurfacePatch();
+    }
+
+    R_EdgeDrawingPrepare();
+
+    if (r_edges_overflow || r_surfaces_overflow) {
+        nostack = true;
+        goto moar_surfedges;
+    }
+
+    /* Save a copy of the sorted surfs/edges for special surface passes */
+    numsavesurfs = surface_p - (surfaces + 1);
+    memcpy(savesurfs, surfaces + 1, numsavesurfs * sizeof(*surfaces));
+    numsaveedges = edge_p - r_edges;
+    memcpy(saveedges, r_edges, numsaveedges * sizeof(*r_edges));
+
+    /* Draw the world (zero flags) and collect scanline flags for special surfaces */
+    memset(&scanflags, 0, sizeof(scanflags));
+    R_ScanEdges(0, &scanflags);
+
+    /* Now draw fence(mask) surfaces over the top */
+    if (scanflags.found & SURF_DRAWFENCE) {
+        memcpy(surfaces + 1, savesurfs, numsavesurfs * sizeof(*surfaces));
+        memcpy(r_edges, saveedges, numsaveedges * sizeof(*r_edges));
+        R_ScanEdges(SURF_DRAWFENCE, &scanflags);
+    }
 
     if (!r_dspeeds.value) {
 	VID_UnlockBuffer();
@@ -1175,6 +1231,17 @@ R_RenderView_(void)
 
     R_DrawParticles();
 
+    /* Now translucent brush models */
+    if (scanflags.found & (r_surfalpha_flags | SURF_DRAWENTALPHA)) {
+        memcpy(surfaces + 1, savesurfs, numsavesurfs * sizeof(*surfaces));
+        memcpy(r_edges, saveedges, numsaveedges * sizeof(*r_edges));
+        VectorCopy(r_origin, modelorg);
+        R_ScanEdges(r_surfalpha_flags | SURF_DRAWENTALPHA, &scanflags);
+    }
+
+    /* Now translucent aliasmodels/sprites */
+    R_DrawEntitiesOnList_Translucent();
+
     if (r_dspeeds.value)
 	dp_time2 = Sys_DoubleTime();
 
@@ -1202,12 +1269,6 @@ R_RenderView_(void)
 
     if (r_dspeeds.value)
 	R_PrintDSpeeds();
-
-    if (r_reportsurfout.value && r_outofsurfaces)
-	Con_Printf("Short %d surfaces\n", r_outofsurfaces);
-
-    if (r_reportedgeout.value && r_outofedges)
-	Con_Printf("Short roughly %d edges\n", r_outofedges * 2 / 3);
 
     // back to high floating-point precision
     Sys_HighFPPrecision();

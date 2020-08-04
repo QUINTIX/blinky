@@ -22,6 +22,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "console.h"
 #include "cvar.h"
 #include "model.h"
+#include "protocol.h"
 #include "quakedef.h"
 #include "r_local.h"
 #include "sys.h"
@@ -59,14 +60,11 @@ typedef struct {
     int index1;
 } aedge_t;
 
-#ifdef NQ_HACK
 /*
- * incomplete model interpolation support
- * -> default to off and don't save to config for now
+ * Model interpolation support
  */
-cvar_t r_lerpmodels = { "r_lerpmodels", "0", false };
-cvar_t r_lerpmove = { "r_lerpmove", "0", false };
-#endif
+cvar_t r_lerpmodels = { "r_lerpmodels", "1", false };
+cvar_t r_lerpmove = { "r_lerpmove", "1", false };
 
 static aedge_t aedges[12] = {
     {0, 1}, {1, 2}, {2, 3}, {3, 0},
@@ -80,8 +78,7 @@ float r_avertexnormals[NUMVERTEXNORMALS][3] = {
 #include "anorms.h"
 };
 
-static void R_AliasSetUpTransform(const entity_t *e, aliashdr_t *pahdr,
-				  int trivial_accept);
+static void R_AliasSetUpTransform(entity_t *e, aliashdr_t *pahdr, lerpdata_t *lerpdata, int trivial_accept);
 static void R_AliasTransformVector(const vec3_t in, vec3_t out);
 static void R_AliasTransformFinalVert(finalvert_t *fv, auxvert_t *av,
 				      trivertx_t *pverts, stvert_t *pstverts);
@@ -92,7 +89,7 @@ void R_AliasProjectFinalVert(finalvert_t *fv, auxvert_t *av);
 /*
  * Model Loader Functions
  */
-static int SW_Aliashdr_Padding(void) { return offsetof(sw_aliashdr_t, ahdr); }
+static int SW_AliashdrPadding(void) { return offsetof(sw_aliashdr_t, ahdr); }
 
 static void
 SW_LoadSkinData(model_t *model, aliashdr_t *ahdr,
@@ -102,7 +99,7 @@ SW_LoadSkinData(model_t *model, aliashdr_t *ahdr,
     byte *pixels;
 
     skinsize = ahdr->skinwidth * ahdr->skinheight;
-    pixels = Hunk_Alloc(skindata->numskins * skinsize * r_pixbytes);
+    pixels = Hunk_AllocName(skindata->numskins * skinsize * r_pixbytes, "modeltmp");
     ahdr->skindata = (byte *)pixels - (byte *)ahdr;
 
     for (i = 0; i < skindata->numskins; i++) {
@@ -133,7 +130,7 @@ SW_LoadMeshData(const model_t *model, aliashdr_t *hdr,
     /*
      * Save the pose vertex data
      */
-    verts = Hunk_Alloc(hdr->numposes * hdr->numverts * sizeof(*verts));
+    verts = Hunk_AllocName(hdr->numposes * hdr->numverts * sizeof(*verts), "modeltmp");
     hdr->posedata = (byte *)verts - (byte *)hdr;
     for (i = 0; i < hdr->numposes; i++) {
 	memcpy(verts, posedata->verts[i], hdr->numverts * sizeof(*verts));
@@ -144,7 +141,7 @@ SW_LoadMeshData(const model_t *model, aliashdr_t *hdr,
      * Save the s/t verts
      * => put s and t in 16.16 format
      */
-    stverts = Hunk_Alloc(hdr->numverts * sizeof(*stverts));
+    stverts = Hunk_AllocName(hdr->numverts * sizeof(*stverts), "modeltmp");
     SW_Aliashdr(hdr)->stverts = (byte *)stverts - (byte *)hdr;
     for (i = 0; i < hdr->numverts; i++) {
 	stverts[i].onseam = meshdata->stverts[i].onseam;
@@ -155,34 +152,36 @@ SW_LoadMeshData(const model_t *model, aliashdr_t *hdr,
     /*
      * Save the triangle data
      */
-    triangles = Hunk_Alloc(hdr->numtris * sizeof(*triangles));
+    triangles = Hunk_AllocName(hdr->numtris * sizeof(*triangles), "modeltmp");
     SW_Aliashdr(hdr)->triangles = (byte *)triangles - (byte *)hdr;
     memcpy(triangles, meshdata->triangles, hdr->numtris * sizeof(*triangles));
 }
 
-static model_loader_t SW_Model_Loader = {
-    .Aliashdr_Padding = SW_Aliashdr_Padding,
+static alias_loader_t SW_AliasModelLoader = {
+    .Padding = SW_AliashdrPadding,
     .LoadSkinData = SW_LoadSkinData,
     .LoadMeshData = SW_LoadMeshData,
     .CacheDestructor = NULL,
 };
 
-const model_loader_t *
-R_ModelLoader(void)
+const alias_loader_t *
+R_AliasModelLoader(void)
 {
-    return &SW_Model_Loader;
+    return &SW_AliasModelLoader;
 }
 
 /*
 ================
 R_AliasCheckBBox
+
+FIXME: does not account for animation frame lerping.
+FIXME: switch over to radius-based culling like glquake?
 ================
 */
-qboolean
-R_AliasCheckBBox(entity_t *e)
+static qboolean
+R_AliasCheckBBox(entity_t *entity, aliashdr_t *aliashdr)
 {
     int i, flags, frame, numv;
-    aliashdr_t *pahdr;
     float zi, basepts[8][3], v0, v1, frac;
     finalvert_t *pv0, *pv1, viewpts[16];
     auxvert_t *pa0, *pa1, viewaux[16];
@@ -193,21 +192,18 @@ R_AliasCheckBBox(entity_t *e)
 
 // expand, rotate, and translate points into worldspace
 
-    e->trivial_accept = 0;
-    pmodel = e->model;
-    pahdr = Mod_Extradata(pmodel);
-
-    R_AliasSetUpTransform(e, pahdr, 0);
+    entity->trivial_accept = 0;
+    pmodel = entity->model;
 
 // construct the base bounding box for this frame
-    frame = e->frame;
+    frame = entity->frame;
 // TODO: don't repeat this check when drawing?
-    if ((frame >= pahdr->numframes) || (frame < 0)) {
+    if ((frame >= aliashdr->numframes) || (frame < 0)) {
 	Con_DPrintf("No such frame %d %s\n", frame, pmodel->name);
 	frame = 0;
     }
 
-    pframedesc = &pahdr->frames[frame];
+    pframedesc = &aliashdr->frames[frame];
 
 // x worldspace coordinates
     basepts[0][0] = basepts[1][0] = basepts[2][0] = basepts[3][0] =
@@ -311,19 +307,17 @@ R_AliasCheckBBox(entity_t *e)
     if (allclip)
 	return false;		// trivial reject off one side
 
-#ifdef NQ_HACK
     /*
      * FIXME - Trivial accept not safe while lerping unless we check
      *         the bbox of both src and dst frames
      */
     if (r_lerpmodels.value)
 	return true;
-#endif
 
-    e->trivial_accept = !anyclip & !zclipped;
-    if (e->trivial_accept) {
-	if (minz > (r_aliastransition + (pahdr->size * r_resfudge))) {
-	    e->trivial_accept |= 2;
+    entity->trivial_accept = !anyclip & !zclipped;
+    if (entity->trivial_accept) {
+	if (minz > (r_aliastransition + (aliashdr->size * r_resfudge))) {
+	    entity->trivial_accept |= 2;
 	}
     }
 
@@ -417,54 +411,32 @@ R_AliasSetUpTransform
 ================
 */
 static void
-R_AliasSetUpTransform(const entity_t *e, aliashdr_t *pahdr, int trivial_accept)
+R_AliasSetUpTransform(entity_t *entity, aliashdr_t *aliashdr, lerpdata_t *lerpdata, int trivial_accept)
 {
     int i;
     float rotationmatrix[3][4], t2matrix[3][4];
     static float tmatrix[3][4];
     static float viewmatrix[3][4];
-    vec3_t angles;
 
 // TODO: should really be stored with the entity instead of being reconstructed
 // TODO: should use a look-up table
 // TODO: could cache lazily, stored in the entity
 
-#ifdef NQ_HACK
-    if (r_lerpmove.value && e->previousanglestime != e->currentanglestime) {
-	float delta = e->currentanglestime - e->previousanglestime;
-	float frac = qclamp((cl.time - e->currentanglestime) / delta, 0.0, 1.0);
-	vec3_t lerpvec;
+    R_AliasSetupTransformLerp(entity, lerpdata);
+    /* The software renderer has reversed pitch angles */
+    lerpdata->angles[PITCH] = -lerpdata->angles[PITCH];
 
-	/* FIXME - hack to skip the viewent (weapon) */
-	if (e == &cl.viewent)
-	    goto nolerp;
+    VectorCopy(lerpdata->origin, r_entorigin);
+    VectorSubtract(r_origin, lerpdata->origin, modelorg);
+    AngleVectors(lerpdata->angles, alias_forward, alias_right, alias_up);
 
-	VectorSubtract(e->currentangles, e->previousangles, lerpvec);
-	for (i = 0; i < 3; i++) {
-	    if (lerpvec[i] >= 180.0f)
-		lerpvec[i] -= 360.0f;
-	    else if (lerpvec[i] < -180.0f)
-		lerpvec[i] += 360.0f;
-	}
-	VectorMA(e->previousangles, frac, lerpvec, angles);
-	angles[PITCH] = -angles[PITCH];
-    } else
-    nolerp:
-#endif
-    {
-	angles[ROLL] = e->angles[ROLL];
-	angles[PITCH] = -e->angles[PITCH];
-	angles[YAW] = e->angles[YAW];
-    }
-    AngleVectors(angles, alias_forward, alias_right, alias_up);
+    tmatrix[0][0] = aliashdr->scale[0];
+    tmatrix[1][1] = aliashdr->scale[1];
+    tmatrix[2][2] = aliashdr->scale[2];
 
-    tmatrix[0][0] = pahdr->scale[0];
-    tmatrix[1][1] = pahdr->scale[1];
-    tmatrix[2][2] = pahdr->scale[2];
-
-    tmatrix[0][3] = pahdr->scale_origin[0];
-    tmatrix[1][3] = pahdr->scale_origin[1];
-    tmatrix[2][3] = pahdr->scale_origin[2];
+    tmatrix[0][3] = aliashdr->scale_origin[0];
+    tmatrix[1][3] = aliashdr->scale_origin[1];
+    tmatrix[2][3] = aliashdr->scale_origin[2];
 
 // TODO: can do this with simple matrix rearrangement
 
@@ -643,9 +615,13 @@ R_AliasPrepareUnclippedPoints(aliashdr_t *pahdr, finalvert_t *pfinalverts)
 
     R_AliasTransformAndProjectFinalVerts(pfinalverts, pstverts);
 
-    if (r_affinetridesc.drawtype)
-	D_PolysetDrawFinalVerts(pfinalverts, r_anumverts);
-
+    if (r_affinetridesc.drawtype) {
+        if (r_transtable) {
+            D_PolysetDrawFinalVerts_Translucent(pfinalverts, r_anumverts);
+        } else {
+            D_PolysetDrawFinalVerts(pfinalverts, r_anumverts);
+        }
+    }
     r_affinetridesc.pfinalverts = pfinalverts;
     r_affinetridesc.ptriangles = (mtriangle_t *)((byte *)pahdr +
 						 SW_Aliashdr(pahdr)->triangles);
@@ -718,64 +694,75 @@ R_AliasSetupSkin(const entity_t *entity, aliashdr_t *aliashdr)
 R_AliasSetupLighting
 ================
 */
-void
-R_AliasSetupLighting(alight_t *plighting)
+static void
+R_AliasSetupLighting(const entity_t *entity, const lerpdata_t *lerpdata)
 {
+    int i, lightlevel;
+    vec3_t lightvec = { 0, 0, -1 };
+    vec3_t dlightvec;
+    dlight_t *dlight;
 
-// guarantee that no vertex will ever be lit below LIGHT_MIN, so we don't have
-// to clamp off the bottom
-    r_ambientlight = plighting->ambientlight;
+    r_ambientlight = R_LightPoint(lerpdata->origin);
+    if (entity == &cl.viewent && r_ambientlight < 24)
+        r_ambientlight = 24;
+    r_shadelight = r_ambientlight;
+
+    for (i = 0, dlight = cl_dlights; i < MAX_DLIGHTS; i++) {
+        if (dlight->die < cl.time)
+            continue;
+        VectorSubtract(lerpdata->origin, dlight->origin, dlightvec);
+        lightlevel = dlight->radius - Length(dlightvec);
+        if (lightlevel > 0)
+            r_ambientlight += lightlevel;
+    }
+
+    /* clamp lighting so it doesn't overbright as much */
+    if (r_ambientlight > 128)
+        r_ambientlight = 128;
+    if (r_ambientlight + r_shadelight > 192)
+        r_shadelight = 192 - r_ambientlight;
 
     if (r_ambientlight < LIGHT_MIN)
 	r_ambientlight = LIGHT_MIN;
-
-    r_ambientlight = (255 - r_ambientlight) << VID_CBITS;
-
-    if (r_ambientlight < LIGHT_MIN)
-	r_ambientlight = LIGHT_MIN;
-
-    r_shadelight = plighting->shadelight;
-
     if (r_shadelight < 0)
 	r_shadelight = 0;
 
+    r_ambientlight = (255 - r_ambientlight) << VID_CBITS;
     r_shadelight *= VID_GRADES;
 
-// rotate the lighting vector into the model's frame of reference
-    r_plightvec[0] = DotProduct(plighting->plightvec, alias_forward);
-    r_plightvec[1] = -DotProduct(plighting->plightvec, alias_right);
-    r_plightvec[2] = DotProduct(plighting->plightvec, alias_up);
+    /* rotate the lighting vector into the model's frame of reference */
+    r_plightvec[0] = DotProduct(lightvec, alias_forward);
+    r_plightvec[1] = -DotProduct(lightvec, alias_right);
+    r_plightvec[2] = DotProduct(lightvec, alias_up);
 }
 
-#ifdef NQ_HACK
 static trivertx_t *
-R_AliasBlendPoseVerts(const entity_t *e, aliashdr_t *hdr, float blend)
+R_AliasBlendPoseVerts(const entity_t *entity, aliashdr_t *aliashdr, lerpdata_t *lerpdata)
 {
     static trivertx_t blendverts[MAXALIASVERTS];
-    trivertx_t *poseverts, *pv1, *pv2, *light;
+    trivertx_t *poseverts, *pv0, *pv1, *light;
     int i, blend0, blend1;
 
 #define SHIFT 22
-    blend1 = blend * (1 << SHIFT);
+    blend1 = lerpdata->blend * (1 << SHIFT);
     blend0 = (1 << SHIFT) - blend1;
 
-    poseverts = (trivertx_t *)((byte *)hdr + hdr->posedata);
-    pv1 = poseverts + e->previouspose * hdr->numverts;
-    pv2 = poseverts + e->currentpose * hdr->numverts;
-    light = (blend < 0.5f) ? pv1 : pv2;
+    poseverts = (trivertx_t *)((byte *)aliashdr + aliashdr->posedata);
+    pv0 = poseverts + lerpdata->pose0 * aliashdr->numverts;
+    pv1 = poseverts + lerpdata->pose1 * aliashdr->numverts;
+    light = (lerpdata->blend < 0.5f) ? pv0 : pv1;
     poseverts = blendverts;
 
-    for (i = 0; i < hdr->numverts; i++, poseverts++, pv1++, pv2++, light++) {
-	poseverts->v[0] = (pv1->v[0] * blend0 + pv2->v[0] * blend1) >> SHIFT;
-	poseverts->v[1] = (pv1->v[1] * blend0 + pv2->v[1] * blend1) >> SHIFT;
-	poseverts->v[2] = (pv1->v[2] * blend0 + pv2->v[2] * blend1) >> SHIFT;
+    for (i = 0; i < aliashdr->numverts; i++, poseverts++, pv0++, pv1++, light++) {
+	poseverts->v[0] = (pv0->v[0] * blend0 + pv1->v[0] * blend1) >> SHIFT;
+	poseverts->v[1] = (pv0->v[1] * blend0 + pv1->v[1] * blend1) >> SHIFT;
+	poseverts->v[2] = (pv0->v[2] * blend0 + pv1->v[2] * blend1) >> SHIFT;
 	poseverts->lightnormalindex = light->lightnormalindex;
     }
 #undef SHIFT
 
     return blendverts;
 }
-#endif
 
 /*
 =================
@@ -785,75 +772,16 @@ set r_apverts
 =================
 */
 static void
-R_AliasSetupFrame(entity_t *e, aliashdr_t *pahdr)
+R_AliasSetupFrame(entity_t *entity, aliashdr_t *aliashdr, lerpdata_t *lerpdata)
 {
-    int frame, pose, numposes;
-    float *intervals;
+    R_AliasSetupAnimationLerp(entity, aliashdr, lerpdata);
 
-    frame = e->frame;
-    if ((frame >= pahdr->numframes) || (frame < 0)) {
-	Con_DPrintf("%s: no such frame %d\n", __func__, frame);
-	frame = 0;
-    }
-
-    pose = pahdr->frames[frame].firstpose;
-    numposes = pahdr->frames[frame].numposes;
-
-    if (numposes > 1) {
-	intervals = (float *)((byte *)pahdr + pahdr->poseintervals) + pose;
-	pose += Mod_FindInterval(intervals, numposes, cl.time + e->syncbase);
-    }
-
-#ifdef NQ_HACK
     if (r_lerpmodels.value) {
-	float delta, time, blend;
-
-	/* A few quick sanity checks to abort lerping */
-	if (e->currentframetime < e->previousframetime)
-	    goto nolerp;
-	if (e->currentframetime - e->previousframetime > 1.0f)
-	    goto nolerp;
-	/* FIXME - hack to skip the viewent (weapon) */
-	if (e == &cl.viewent)
-	    goto nolerp;
-
-	if (numposes > 1) {
-	    /* FIXME - merge with Mod_FindInterval? */
-	    int i;
-	    float fullinterval, targettime;
-	    fullinterval = intervals[numposes - 1];
-	    time = cl.time + e->syncbase;
-	    targettime = time - (int)(time / fullinterval) * fullinterval;
-	    for (i = 0; i < numposes - 1; i++)
-		if (intervals[i] > targettime)
-		    break;
-
-	    e->currentpose = pahdr->frames[e->currentframe].firstpose + i;
-	    if (i == 0) {
-		e->previouspose = pahdr->frames[e->currentframe].firstpose;
-		e->previouspose += numposes - 1;
-		time = targettime;
-		delta = intervals[0];
-	    } else {
-		e->previouspose = e->currentpose - 1;
-		time = targettime - intervals[i - 1];
-		delta = intervals[i] - intervals[i - 1];
-	    }
-	} else {
-	    e->currentpose = pahdr->frames[e->currentframe].firstpose;
-	    e->previouspose = pahdr->frames[e->previousframe].firstpose;
-	    time = cl.time - e->currentframetime;
-	    delta = e->currentframetime - e->previousframetime;
-	}
-	blend = qclamp(time / delta, 0.0f, 1.0f);
-	r_apverts = R_AliasBlendPoseVerts(e, pahdr, blend);
-
-	return;
+        r_apverts = R_AliasBlendPoseVerts(entity, aliashdr, lerpdata);
+    } else {
+        r_apverts = (trivertx_t *)((byte *)aliashdr + aliashdr->posedata);
+        r_apverts += lerpdata->pose0 * aliashdr->numverts;
     }
- nolerp:
-#endif
-    r_apverts = (trivertx_t *)((byte *)pahdr + pahdr->posedata);
-    r_apverts += pose * pahdr->numverts;
 }
 
 
@@ -863,13 +791,22 @@ R_AliasDrawModel
 ================
 */
 void
-R_AliasDrawModel(entity_t *e, alight_t *plighting)
+R_AliasDrawModel(entity_t *entity)
 {
-    aliashdr_t *pahdr;
+    aliashdr_t *aliashdr;
     finalvert_t *pfinalverts;
     finalvert_t finalverts[CACHE_PAD_ARRAY(MAXALIASVERTS, finalvert_t)];
     auxvert_t *pauxverts;
     auxvert_t auxverts[MAXALIASVERTS];
+    lerpdata_t lerpdata;
+
+    aliashdr = Mod_Extradata(entity->model);
+    R_AliasSetUpTransform(entity, aliashdr, &lerpdata, entity->trivial_accept);
+    if (!R_AliasCheckBBox(entity, aliashdr))
+        return;
+
+    if (entity->alpha == ENTALPHA_ZERO)
+        return;
 
     r_amodels_drawn++;
 
@@ -877,36 +814,38 @@ R_AliasDrawModel(entity_t *e, alight_t *plighting)
     pfinalverts = CACHE_ALIGN_PTR(finalverts);
     pauxverts = &auxverts[0];
 
-    pahdr = Mod_Extradata(e->model);
+    R_AliasSetupSkin(entity, aliashdr);
+    R_AliasSetupLighting(entity, &lerpdata);
+    R_AliasSetupFrame(entity, aliashdr, &lerpdata);
 
-    R_AliasSetupSkin(e, pahdr);
-    R_AliasSetUpTransform(e, pahdr, e->trivial_accept);
-    R_AliasSetupLighting(plighting);
-    R_AliasSetupFrame(e, pahdr);
+    if (!entity->colormap)
+	Sys_Error("%s: !entity->colormap", __func__);
 
-    if (!e->colormap)
-	Sys_Error("%s: !e->colormap", __func__);
+    r_affinetridesc.drawtype = (entity->trivial_accept == 3) &&	r_recursiveaffinetriangles;
 
-    r_affinetridesc.drawtype = (e->trivial_accept == 3) &&
-	r_recursiveaffinetriangles;
+    if (entity->alpha != ENTALPHA_DEFAULT && entity->alpha != ENTALPHA_ONE) {
+        r_transtable = Alpha_Transtable(ENTALPHA_DECODE(entity->alpha));
+    } else {
+        r_transtable = NULL;
+    }
 
     if (r_affinetridesc.drawtype) {
 	D_PolysetUpdateTables();	// FIXME: precalc...
     } else {
 #ifdef USE_X86_ASM
-	D_Aff8Patch(e->colormap);
+	D_Aff8Patch(entity->colormap);
 #endif
     }
 
-    acolormap = e->colormap;
+    acolormap = entity->colormap;
 
-    if (e != &cl.viewent)
+    if (entity != &cl.viewent)
 	ziscale = ((float)0x8000) * ((float)0x10000);
     else
 	ziscale = ((float)0x8000) * ((float)0x10000) * 3.0;
 
-    if (e->trivial_accept)
-	R_AliasPrepareUnclippedPoints(pahdr, pfinalverts);
+    if (entity->trivial_accept)
+	R_AliasPrepareUnclippedPoints(aliashdr, pfinalverts);
     else
-	R_AliasPreparePoints(pahdr, pfinalverts, pauxverts);
+	R_AliasPreparePoints(aliashdr, pfinalverts, pauxverts);
 }

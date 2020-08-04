@@ -95,9 +95,10 @@ void Memory_Init(void *buf, int size);
 void Z_Free(const void *ptr);
 void *Z_Malloc(int size);	// returns 0 filled memory
 void *Z_Realloc(const void *ptr, int size);
+char *Z_StrDup(const char *string);
+char *Z_StrnDup(const char *string, size_t size);
 
 #define HUNK_NAMELEN 8
-void *Hunk_Alloc(int size);	// returns 0 filled memory
 void *Hunk_AllocName(int size, const char *name);
 void *Hunk_AllocExtend(const void *base, int size);
 

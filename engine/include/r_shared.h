@@ -41,6 +41,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // !!! if this is changed, it must be changed in d_ifacea.h too !!!
 #define	MAXHEIGHT	1200
 
+#define MINWIDTH  320
+#define MINHEIGHT 200
+
 #define INFINITE_DISTANCE	0x10000	// distance that's always guaranteed to
 					//  be farther away than anything in
 					//  the scene
@@ -48,6 +51,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //===================================================================
 
 extern int cachewidth;
+extern int cacheheight;
 extern pixel_t *cacheblock;
 extern int screenwidth;
 
@@ -65,12 +69,70 @@ extern vec3_t vup, base_vup;
 extern vec3_t vpn, base_vpn;
 extern vec3_t vright, base_vright;
 
-// FIXME - reasoning behind number choice?
-#define NUMSTACKEDGES		3000
-#define	MINEDGES		NUMSTACKEDGES
-#define NUMSTACKSURFACES	1500
-#define MINSURFACES		NUMSTACKSURFACES
-#define	MAXSPANS		3000
+// This marks the top of the hunk after map initialisation
+// Surfaces, etc. are allocated on top of this...
+extern int r_maphunkmark;
+
+
+/*
+ * Min edges/surfaces are just a reasonable number to play the
+ * original id/hipnotic/rouge maps.  Surfaces we want to reference
+ * using shorts to pack the edge_t struct into cache lines, so the
+ * upper limit on those is 16 bits.  Edges is just 32 bit limited, but
+ * no need for quite that many if we don't have the surfs...
+ */
+#define MINSURFACES    768
+#define MINEDGES      2304
+#define MAXSURFACES 0xffff
+#define MAXEDGES (MAXSURFACES << 2)
+
+/*
+ * Maxs for stack allocated edges/surfs here are based on having at
+ * least 1MB of available stack size on a 32-bit platform.  This could
+ * be tweaked per-target, but for now this will do.  Alias model
+ * rendering still needs to use the stack on top of this, so don't go
+ * crazy.
+ *
+ * Automated formula would be something like 1:3 surf:edge ratio
+ *
+ * edge_t  = 32 bytes * 15360 =   491520
+ * surf_t  = 64 bytes *  6400 =   409600
+ * espan_t = 16 bytes *  3000 =    48000
+ *                            =>  949120
+ */
+#define MAXSTACKEDGES    15360
+#define MAXSTACKSURFACES  6400
+#define MAXSPANS          3000
+
+/*
+ * Bump the max by this amount if we overflow.  Shouldn't be too many
+ * frames before we converge on the right limit.
+ */
+#define MAX_SURFACES_INCREMENT   5120
+#define MAX_EDGES_INCREMENT     10240
+
+extern int r_numsurfaces;
+extern int r_numedges;
+
+/*
+ * Edges and vertices generated when clipping bmodels against the
+ * world are stored on the stack.  Some level designers will create
+ * huge brushmodels that cover large areas (e.g. a water brush that
+ * flood fills a complex room) which can generate many, many extra
+ * verts and edges when clipped to the geometry.
+ *
+ * We keep the stack size relatively small for the common case, but
+ * bump up the size if we encounter the need.
+ */
+#define MIN_STACK_BMODEL_VERTS  256 // vert = 12b     => 3k
+#define MIN_STACK_BMODEL_EDGES  512 // edge = 28b/32b => 14k/16k
+#define MAX_STACK_BMODEL_VERTS 2048 // vert = 12b     => 24k
+#define MAX_STACK_BMODEL_EDGES 6144 // edge = 28b/32b => 172k/196k
+#define STACK_BMODEL_VERTS_INCREMENT 128
+#define STACK_BMODEL_EDGES_INCREMENT 256
+
+extern int r_numbclipverts; // Number of verts allocated
+extern int r_numbclipedges; // Number of edges allocated
 
 // !!! if this is changed, it must be changed in asm_draw.h too !!!
 typedef struct espan_s {
@@ -97,10 +159,11 @@ typedef struct surf_s {
     qboolean insubmodel;
     float d_ziorigin, d_zistepu, d_zistepv;
 
-    int pad[2];			// to 64 bytes
+    const byte *alphatable;     // For entity alpha
+    int pad[1];                 // to 64 bytes
 } surf_t;
 
-extern surf_t *surfaces, *surface_p, *surf_max;
+extern surf_t *surfaces, *surface_p, *surf_max, *bmodel_surfaces;
 
 // surfaces are generated in back to front order by the bsp, so if a surf
 // pointer is greater than another one, it should be drawn in front
@@ -147,7 +210,7 @@ typedef struct edge_s {
     fixed16_t u;
     fixed16_t u_step;
     struct edge_s *prev, *next;
-    unsigned int surfs[2];
+    uint16_t surfs[2];
     struct edge_s *nextremove;
     float nearzi;
     medge_t *owner;
