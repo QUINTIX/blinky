@@ -443,7 +443,12 @@ R_ViewChanged(const vrect_t *vrect, int lineadj, float aspect)
     r_refdef.aliasvrectbottom =
 	r_refdef.aliasvrect.y + r_refdef.aliasvrect.height;
 
-    pixelAspect = aspect;
+    if (fisheye_enabled) {
+        pixelAspect = (float)r_refdef.vrect.height / r_refdef.vrect.width;
+    }
+    else {
+        pixelAspect = aspect;
+    }
     xOrigin = r_refdef.xOrigin;
     yOrigin = r_refdef.yOrigin;
 
