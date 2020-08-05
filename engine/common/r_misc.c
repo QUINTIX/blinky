@@ -488,7 +488,11 @@ R_SetupFrame(void)
     r_viewleaf = Mod_PointInLeaf(cl.worldmodel, r_origin);
 
     r_dowarpold = r_dowarp;
-    r_dowarp = r_waterwarp.value && (r_viewleaf->contents <= CONTENTS_WATER);
+    if (fisheye_enabled) {
+      r_dowarp = 0;
+    } else {
+      r_dowarp = r_waterwarp.value && (r_viewleaf->contents <= CONTENTS_WATER);
+    }
 
     if ((r_dowarp != r_dowarpold) || r_viewchanged) {
 	if (r_dowarp) {
