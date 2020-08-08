@@ -724,7 +724,7 @@ static const char **showtree_list;
 static unsigned showtree_idx;
 
 static void
-Con_ShowTree_Populate(struct rb_node *n)
+Con_ShowTree_Populate(struct redblack_node *n)
 {
     if (n) {
 	Con_ShowTree_Populate(n->rb_left);
@@ -740,7 +740,7 @@ Con_ShowTree(struct stree_root *root)
     showtree_list = malloc(root->entries * sizeof(char *));
     if (showtree_list) {
 	showtree_idx = 0;
-	Con_ShowTree_Populate(root->root.rb_node);
+	Con_ShowTree_Populate(root->root.redblack_node);
 	Con_ShowList(showtree_list, root->entries, root->maxlen);
 	free(showtree_list);
     }

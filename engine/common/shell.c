@@ -108,8 +108,8 @@ STree_AllocString(unsigned int length)
 qboolean
 STree_Insert(struct stree_root *root, struct stree_node *node)
 {
-    struct rb_node **p = &root->root.rb_node;
-    struct rb_node *parent = NULL;
+    struct redblack_node **p = &root->root.redblack_node;
+    struct redblack_node *parent = NULL;
     unsigned int len;
     int cmp;
 
@@ -172,7 +172,7 @@ STree_Remove(struct stree_root *root, struct stree_node *node)
 
 /* STree_MaxMatch helper */
 static int
-ST_node_match(struct rb_node *n, const char *str, int min_match, int max_match)
+ST_node_match(struct redblack_node *n, const char *str, int min_match, int max_match)
 {
     if (n) {
 	max_match = ST_node_match(n->rb_left, str, min_match, max_match);
@@ -197,7 +197,7 @@ char *
 STree_MaxMatch(struct stree_root *root, const char *pfx)
 {
     int max_match, min_match, match;
-    struct rb_node *n;
+    struct redblack_node *n;
     struct stree_node *sn;
     char *result = NULL;
 
@@ -205,7 +205,7 @@ STree_MaxMatch(struct stree_root *root, const char *pfx)
     max_match = root->minlen;
     min_match = strlen(pfx);
 
-    n = root->root.rb_node;
+    n = root->root.redblack_node;
     sn = stree_entry(n);
 
     if (root->entries == 1) {
@@ -231,7 +231,7 @@ STree_MaxMatch(struct stree_root *root, const char *pfx)
 struct stree_node *
 STree_Find(struct stree_root *root, const char *s)
 {
-    struct rb_node *p = root->root.rb_node;
+    struct redblack_node *p = root->root.redblack_node;
     struct stree_node *ret = NULL;
     struct stree_node *node;
     int cmp;
@@ -267,7 +267,7 @@ STree_StackInit(struct stree_root *root)
 	struct stree_stack *s = root->stack;
 	s->depth = 0;
 	s->max_depth = STree_MaxDepth(root);
-	s->stack = Z_Malloc(s->max_depth * sizeof(struct rb_node *));
+	s->stack = Z_Malloc(s->max_depth * sizeof(struct redblack_node *));
 	if (!s->stack) {
 	    Z_Free(s);
 	    root->stack = NULL;
@@ -286,8 +286,8 @@ STree_ForEach_Init__(struct stree_root *root, struct stree_node **n)
     STree_StackInit(root);
 
     /* Point to the first node */
-    if (root->root.rb_node)
-	*n = stree_entry(root->root.rb_node);
+    if (root->root.redblack_node)
+	*n = stree_entry(root->root.redblack_node);
     else
 	*n = NULL;
 }
@@ -303,14 +303,14 @@ STree_ForEach_Cleanup__(struct stree_root *root)
 }
 
 static void
-STree_StackPush(struct stree_root *root, struct rb_node *n)
+STree_StackPush(struct stree_root *root, struct redblack_node *n)
 {
     struct stree_stack *s = root->stack;
     assert(s->depth < s->max_depth);
     s->stack[s->depth++] = n;
 }
 
-static struct rb_node *
+static struct redblack_node *
 STree_StackPop(struct stree_root *root)
 {
     struct stree_stack *s = root->stack;
@@ -334,7 +334,7 @@ STree_StackPop(struct stree_root *root)
 qboolean
 STree_WalkLeft__(struct stree_root *root, struct stree_node **n)
 {
-    struct rb_node *rb;
+    struct redblack_node *rb;
 
     if (*n) {
 	rb = &(*n)->node;
@@ -365,7 +365,7 @@ STree_WalkLeft__(struct stree_root *root, struct stree_node **n)
 void
 STree_WalkRight__(struct stree_node **n)
 {
-    struct rb_node *rb;
+    struct redblack_node *rb;
 
     rb = &(*n)->node;
     if (rb->rb_right)
@@ -384,12 +384,12 @@ void
 STree_ForEach_After__(struct stree_root *root, struct stree_node **n,
 		      const char *s)
 {
-    struct rb_node *p;
+    struct redblack_node *p;
     struct stree_node *node;
     int cmp;
 
     *n = NULL;
-    p = root->root.rb_node;
+    p = root->root.redblack_node;
     while (p) {
 	node = stree_entry(p);
 	cmp = strcasecmp(s, node->string);
@@ -420,11 +420,11 @@ void
 STree_Completions(struct stree_root *out, struct stree_root *in, const char *s)
 {
     struct stree_node *n;
-    struct rb_node *rb = NULL;
+    struct redblack_node *rb = NULL;
     int cmp, len;
 
     len = strlen(s);
-    rb = in->root.rb_node;
+    rb = in->root.redblack_node;
 
     /* Work our way down to the subtree required */
     while (rb) {

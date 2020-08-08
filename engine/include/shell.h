@@ -30,15 +30,15 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  */
 struct stree_node {
     const char *string;
-    struct rb_node node;
+    struct redblack_node node;
 };
 
-/* stree_entry - Gets the stree_node ptr from the internal rb_node ptr */
+/* stree_entry - Gets the stree_node ptr from the internal redblack_node ptr */
 #define stree_entry(ptr) container_of(ptr, struct stree_node, node)
 
 /* For iterative tree walking */
 struct stree_stack {
-    struct rb_node **stack;
+    struct redblack_node **stack;
     int depth;
     int max_depth;
 };

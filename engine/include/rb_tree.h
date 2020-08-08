@@ -38,17 +38,17 @@
 
 #include <stddef.h>
 
-struct rb_node {
-    struct rb_node *rb_parent;
+struct redblack_node {
+    struct redblack_node *rb_parent;
     int rb_color;
 #define	QRB_RED		0
 #define	QRB_BLACK	1
-    struct rb_node *rb_right;
-    struct rb_node *rb_left;
+    struct redblack_node *rb_right;
+    struct redblack_node *rb_left;
 };
 
 struct rb_root {
-    struct rb_node *rb_node;
+    struct redblack_node *redblack_node;
 };
 
 #define QRB_ROOT	(struct rb_root) { NULL, }
@@ -56,16 +56,16 @@ struct rb_root {
 /*
  *
  */
-extern void rb_insert_color(struct rb_node *, struct rb_root *);
+extern void rb_insert_color(struct redblack_node *, struct rb_root *);
 
 /*
  *
  */
-extern void rb_erase(struct rb_node *, struct rb_root *);
+extern void rb_erase(struct redblack_node *, struct rb_root *);
 
 static inline void
-rb_link_node(struct rb_node *node, struct rb_node *parent,
-	     struct rb_node **rb_link)
+rb_link_node(struct redblack_node *node, struct redblack_node *parent,
+	     struct redblack_node **rb_link)
 {
     node->rb_parent = parent;
     node->rb_color = QRB_RED;

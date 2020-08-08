@@ -678,7 +678,8 @@ void F_Init(void)
 
 void F_Shutdown(void)
 {
-   lua_close(lua);
+   if(NULL != lua)
+       lua_close(lua);
 }
 
 void F_WriteConfig(FILE* f)
