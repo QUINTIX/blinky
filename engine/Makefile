@@ -520,6 +520,7 @@ $(1)/%.o:	common/%.S	; $$(do_cc_o_c)
 $(1)/%.o:	NQ/%.S		; $$(do_cc_o_c)
 $(1)/%.o:	common/%.c	; $$(do_cc_o_c)
 $(1)/%.o:	NQ/%.c		; $$(do_cc_o_c)
+$(1)/%.o:	NQ/fisheye/%.c	; $$(do_cc_o_c)
 $(1)/%.res:	common/%.rc	; $$(do_windres_res_rc)
 $(1)/%.res:	NQ/%.rc		; $$(do_windres_res_rc)
 endef
@@ -660,7 +661,7 @@ CL_OBJS := \
 	cl_parse.o	\
 	cl_tent.o	\
 	console.o	\
-	fisheye.o	\
+	fisheye/fisheye.o	\
 	keys.o		\
 	menu.o		\
 	pcx.o 		\
