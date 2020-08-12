@@ -7,8 +7,10 @@
 #include "qtypes.h"
 #include "quakedef.h"
 #include "sys.h"
+#include "screen.h"
 #include "zone.h"
 #include "host.h"
+#include "cmd.h"
 
 #include "fisheye.h"
 
@@ -17,6 +19,9 @@
 
 const char* greeting = "===fisheye test===\n";
 const char* logFile = "fishtest.log";
+
+const static double TIME_TO_GIB = 6.25;
+const static double HALF_A_SEC = 0.5;
 
 struct MyState {
 	const char *testString;
@@ -53,7 +58,7 @@ static int teardown(void **state){
 	return 0;
 }
 
-static void test_hello_world(void **state){
+static void test_post_init(void **state){
 	struct MyState *myState = *state;
 	const char* text = myState->testString;
 	quakeparms_t parms = *myState->params;
@@ -63,9 +68,46 @@ static void test_hello_world(void **state){
 	Sys_DebugLog(logFile, "- QBASEDIR is \"%s\"\n", parms.basedir);
 }
 
+static void runConsoleScript(double fakeDeltaTime){
+	Host_Frame(fakeDeltaTime);
+	Cbuf_InsertText("f_globe tetra; f_lense stereographic; f_fov 210; show_fps 1");
+	Cbuf_Execute();
+	SCR_CenterPrint("Warming up for tests. Do not exit.");
+	Host_Frame(fakeDeltaTime);
+}
+
+static void test_warmup(void **state){
+	
+	double oldtime = Sys_DoubleTime() - 0.1;
+	double deltatime = 0.1, newtime = 0.;
+	
+	runConsoleScript(deltatime);
+	
+	double starttime = Sys_DoubleTime();
+	double endtime = starttime + TIME_TO_GIB;
+	
+	Sys_Printf("%0.3f seconds elapsed before full init\n", starttime-oldtime);
+	while (oldtime < endtime){
+		newtime = Sys_DoubleTime();
+		deltatime = newtime - oldtime;
+		
+		if (deltatime > sys_ticrate.value * 2){
+			oldtime = newtime; }
+		else{ oldtime += deltatime; }
+		
+		Host_Frame(deltatime);
+		if(endtime - oldtime < HALF_A_SEC){
+			SCR_CenterPrint("Warmup nearly done.");
+		}
+	}
+	
+	Host_Frame(deltatime);
+}
+
 int main(void) {
 	const struct CMUnitTest tests[] = {
-		cmocka_unit_test(test_hello_world)
+		cmocka_unit_test(test_post_init),
+		cmocka_unit_test(test_warmup)
 	};
 	return cmocka_run_group_tests(tests, setup, teardown);
 }
