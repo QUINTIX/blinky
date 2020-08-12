@@ -44,6 +44,7 @@ static int setup(void **state){
 }
 
 static int teardown(void **state){
+	Host_Shutdown();
 	struct MyState *myState = *state;
 	quakeparms_t parms = *myState->params;
 	free(parms.membase);
