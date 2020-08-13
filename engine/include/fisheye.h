@@ -1,3 +1,5 @@
+#include <stdio.h>
+#include "mathlib.h"
 #ifndef FISHEYE_H_
 #define FISHEYE_H_
 
@@ -23,8 +25,11 @@ struct _globe {
    // a large array of pixels that hold all rendered views
    byte *pixels;
    int pixelHeapLowMark;
+   
+   // retrieves the _realative index_ of a pixel in the platemap
+   #define RELATIVE_GLOBEPIXEL(plate, x, y) ((plate)*(globe.platesize)*(globe.platesize) + (x) + (y)*(globe.platesize))
    // retrieves a pointer to a pixel in the platemap
-   #define GLOBEPIXEL(plate,x,y) (globe.pixels + (plate)*(globe.platesize)*(globe.platesize) + (x) + (y)*(globe.platesize))
+   #define GLOBEPIXEL(plate,x,y) (globe.pixels + RELATIVE_GLOBEPIXEL(plate, x, y))
 
    // globe plates
    #define MAX_PLATES 6

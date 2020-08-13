@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <cmocka.h>
 #include <stdio.h>
+#include <math.h>
 #include "qtypes.h"
 #include "quakedef.h"
 #include "sys.h"
@@ -13,6 +14,7 @@
 #include "cmd.h"
 
 #include "fisheye.h"
+#include "fishlens.h"
 
 #define stringify__(x) #x
 #define stringify(x) stringify__(x)
@@ -26,10 +28,12 @@ const char* BIGIFY = "vid_width 1024; vid_height 640; vid_restart;";
 const static double TIME_TO_GIB = 6.25;
 const static double HALF_A_SEC = 0.5;
 double FAKE_DELTA_TIME = 0.1;
+const static vec_t EPSILON = 1./(0x40000);
 
 struct MyState {
 	const char *testString;
 	double lastFrameTime;
+	int luaState;
 	quakeparms_t *params;
 };
 
@@ -110,11 +114,10 @@ static void test_warmup(void **state){
 	runConsoleSetupScript(FAKE_DELTA_TIME);
 	double endtime = Sys_DoubleTime();
 	
-	Sys_Printf("%0.3f seconds elapsed before full init\n", starttime-endtime);
+	Sys_Printf("%0.3f seconds elapsed before full init\n", endtime - starttime);
 	runHostForDuration(TIME_TO_GIB);
 	SCR_CenterPrint("Warmup nearly done.");
 	myState->lastFrameTime = runHostForDuration(HALF_A_SEC);
-	
 }
 
 static void test_globe_malloc_in_range(void **state){
@@ -164,9 +167,97 @@ static void test_can_change_window_size(void **state){
 	myState->lastFrameTime = runHostForDuration(HALF_A_SEC);
 }
 
+static void test_latlon_to_ray(void **state){
+	(void)state;
+	
+	const vec2_u onEquator = { .latlon = {
+		.lat = 0.,
+		.lon = M_PI/4.
+	}};
+	
+	vec3_u actualRay = latlon_to_ray_(onEquator);
+	
+	float halfRoot2 = sqrtf(2)/2;
+	
+	assert_float_equal(halfRoot2, actualRay.xyz.x, EPSILON);
+	assert_float_equal(0, actualRay.xyz.y, EPSILON);
+	assert_float_equal(halfRoot2, actualRay.xyz.z, EPSILON);
+}
+
+static void test_ray_to_latlon(void **state){
+	(void)state;
+	const vec3_u pole = {.vec = {0., -1., 0.} };
+	
+	vec2_u actualLatLon = ray_to_latlon_(pole);
+	
+	assert_float_equal(actualLatLon.latlon.lat, -M_PI/2, EPSILON);
+	assert_float_equal(actualLatLon.latlon.lon, 0., EPSILON);
+}
+
+static void test_plate_uv_to_ray(void **state){
+	(void)state;
+	
+	const vec2_u uv = {.uv = {.u=0.0, .v=0.5}};
+	struct _globe globe;
+	
+	const vec3_u forward =	{.vec = {0., 0., 1.}};
+	const vec3_u right =	{.vec = {1., 0., 0.}};
+	const vec3_u up =	{.vec = {0., 1., 0.}};
+	VectorCopy(forward.vec, globe.plates[0].forward);
+	VectorCopy(right.vec, globe.plates[0].right);
+	VectorCopy(up.vec, globe.plates[0].up);
+	
+	vec3_u actualRay = plate_uv_to_ray_(&globe, 0, uv);
+	
+	vec_t lengthSq = DotProduct(actualRay.vec, actualRay.vec);
+	assert_float_equal(1.0, lengthSq, EPSILON);
+}
+
+static int mockScriptState = 0;
+
+static vec2_u mockForward(vec3_u input){
+	mockScriptState = 1;
+	vec2_u retval = {.k={input.xyz.x, input.xyz.y}};
+	return retval;
+}
+
+static void test_uv_to_screen(void **state){
+	struct _globe globe;
+	struct _lens lens;
+	lens.width_px = 512;
+	lens.height_px = 256;
+	lens.scale = (float)lens.height_px;
+	
+	const vec3_u forward =	{.vec = {0., 0., 1.}};
+	const vec3_u right =	{.vec = {1., 0., 0.}};
+	const vec3_u up =	{.vec = {0., 1., 0.}};
+	VectorCopy(forward.vec, globe.plates[0].forward);
+	VectorCopy(right.vec, globe.plates[0].right);
+	VectorCopy(up.vec, globe.plates[0].up);
+	
+	const struct state_paq paq = {
+		.globe = &globe,
+		.lens = &lens,
+		.forward = mockForward
+	};
+	
+	const vec2_u uv = {.uv = {.u=1.0, .v=1.0}};
+	
+	point2d screenPoint = uv_to_screen_(paq, 0, uv);
+	assert_in_range(screenPoint.xy.x, 0, lens.width_px);
+	assert_int_equal(1, mockScriptState);
+	mockScriptState = 0;
+}
+
 int main(void) {
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test(test_post_init),
+		
+		cmocka_unit_test(test_latlon_to_ray),
+		cmocka_unit_test(test_ray_to_latlon),
+		cmocka_unit_test(test_plate_uv_to_ray),
+		cmocka_unit_test(test_uv_to_screen),
+		
 		cmocka_unit_test(test_warmup),
 		cmocka_unit_test(test_globe_malloc_in_range),
 		cmocka_unit_test(test_lens_malloc_in_range),

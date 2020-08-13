@@ -662,6 +662,7 @@ CL_OBJS := \
 	cl_tent.o	\
 	console.o	\
 	fisheye/fishmem.o 	\
+	fisheye/fishlens.o	\
 	fisheye/fisheye.o	\
 	keys.o		\
 	menu.o		\

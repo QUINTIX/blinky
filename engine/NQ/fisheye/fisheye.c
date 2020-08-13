@@ -21,6 +21,7 @@
 #include "pcx.h"	//unwanted dependency
 
 #include "fishmem.h"
+#include "fishlens.h"
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -50,23 +51,7 @@ double fisheye_plate_fov;
 // lens builder can work each frame.  It keeps track of its work between frames
 // so it can resume without problems.  This allows the user to watch the lens
 // pixels become visible as they are calculated.
-static struct _lens_builder
-{
-   qboolean working;
-   int start_time;
-   float seconds_per_frame;
-   struct _inverse_state
-   {
-      int ly;
-   } inverse_state;
-   struct _forward_state
-   {
-      int *top;
-      int *bot;
-      int plate_index;
-      int py;
-   } forward_state;
-} lens_builder;
+static struct _lens_builder lens_builder;
 
 // the Lua state pointer
 static lua_State *lua;
@@ -440,12 +425,10 @@ void F_RenderView(void)
 // --------------------------------------------------------------------------------
 
 static void start_lens_builder_clock(void) {
-   lens_builder.start_time = clock();
+   start_lens_builder_clock_(&lens_builder);
 }
 static qboolean is_lens_builder_time_up(void) {
-   clock_t time = clock() - lens_builder.start_time;
-   float s = ((float)time) / CLOCKS_PER_SEC;
-   return (s >= lens_builder.seconds_per_frame);
+   return is_lens_builder_time_up_(&lens_builder);
 }
 
 // -------------------------------------------------------------------------------- 
@@ -806,34 +789,22 @@ static struct stree_root * cmdarg_globe(const char *arg)
 
 static void latlon_to_ray(double lat, double lon, vec3_t ray)
 {
-   double clat = cos(lat);
-   ray[0] = sin(lon)*clat;
-   ray[1] = sin(lat);
-   ray[2] = cos(lon)*clat;
+   vec3_u ray_ = latlon_to_ray_((vec2_u){.k={lat,lon}});
+   VectorCopy(ray_.vec, ray);
 }
 
 static void ray_to_latlon(vec3_t ray, double *lat, double *lon)
 {
-   *lon = atan2(ray[0], ray[2]);
-   *lat = atan2(ray[1], sqrt(ray[0]*ray[0]+ray[2]*ray[2]));
+   vec3_u ray_ = {.vec = *ray};
+   vec2_u latlon = ray_to_latlon_(ray_);
+   *lon = latlon.latlon.lon; *lat = latlon.latlon.lat;
 }
 
 static void plate_uv_to_ray(int plate_index, double u, double v, vec3_t ray)
 {
-   // transform to image coordinates
-   u -= 0.5;
-   v -= 0.5;
-   v = -v;
-
-   // clear ray
-   ray[0] = ray[1] = ray[2] = 0;
-
-   // get euclidean coordinate from texture uv
-   VectorMA(ray, globe.plates[plate_index].dist, globe.plates[plate_index].forward, ray);
-   VectorMA(ray, u, globe.plates[plate_index].right, ray);
-   VectorMA(ray, v, globe.plates[plate_index].up, ray);
-
-   VectorNormalize(ray);
+   vec2_u uv = {.k={(vec_t)u,(vec_t)v}};
+   vec3_u ray_ = plate_uv_to_ray_(&globe, plate_index, uv);
+   VectorCopy(ray_.vec, ray);
 }
 
 // -------------------------------------------------------------------------------- 
