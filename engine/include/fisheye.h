@@ -10,6 +10,8 @@ void F_Shutdown(void);
 void F_RenderView(void);
 void F_WriteConfig(FILE *f);
 
+typedef int (*ray_to_plate_index_t)(vec3_t ray);
+
 struct _globe {
 
    // name of the current globe
@@ -24,7 +26,6 @@ struct _globe {
    // the environment map
    // a large array of pixels that hold all rendered views
    byte *pixels;
-   int pixelHeapLowMark;
    
    // retrieves the _realative index_ of a pixel in the platemap
    #define RELATIVE_GLOBEPIXEL(plate, x, y) ((plate)*(globe.platesize)*(globe.platesize) + (x) + (y)*(globe.platesize))
@@ -110,7 +111,6 @@ struct _lens {
    //    <------- width_px ------->
    //
    byte **pixels;
-   int pixelHeapLowMark;
 
    // retrieves a pointer to a lens pixel
    #define LENSPIXEL(x,y) (lens.pixels + (x) + (y)*lens.width_px)
@@ -130,7 +130,6 @@ struct _lens {
    //    <------- width_px ------->
    //
    byte *pixel_tints;
-   int pixelTintsLowMark;
 
    // retrieves a pointer to a lens pixel tint
    #define LENSPIXELTINT(x,y) (lens.pixel_tints + (x) + (y)*lens.width_px)
