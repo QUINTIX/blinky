@@ -51,5 +51,5 @@ void createOrReallocBuffers(struct _globe* globe, struct _lens* lens,
 	
    lastHighMark = Hunk_HighMark();
    
-   lastSize = postVideoHighMark - lastHighMark;
+   lastSize = lastHighMark - postVideoHighMark;
 }
