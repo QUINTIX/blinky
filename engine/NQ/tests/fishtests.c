@@ -129,8 +129,7 @@ static void test_globe_malloc_in_range(void **state){
 	
 	struct _globe globe = *F_getGlobe();
 	byte* lastPixel = globe.pixels +
-		(globe.platesize*globe.platesize * MAX_PLATES - 1)
-		* sizeof(*globe.pixels);
+         (globe.platesize*globe.platesize * MAX_PLATES - 1);
 	
 	assert_in_range(lastPixel, lowerAddr, upperAddr);
 	assert_in_range(globe.pixels, lowerAddr, upperAddr);
@@ -146,13 +145,15 @@ static void test_lens_malloc_in_range(void **state){
 	struct _lens lens = *F_getLens();
 	
 	int area = lens.width_px * lens.height_px;
-	byte** lastLensPixel = lens.pixels + (area - 1)*sizeof(*lens.pixels);
-	assert_in_range(lastLensPixel, lowerAddr, upperAddr);
+   
+        byte* lastTintPixel = lens.pixel_tints + (area - 1);
+        assert_in_range(lastTintPixel, lowerAddr, upperAddr);
+        assert_in_range(lens.pixel_tints, lowerAddr, upperAddr);
+   
+        byte** lastLensPixel = lens.pixels + (area - 1);
 	assert_in_range(lens.pixels, lowerAddr, upperAddr);
+        assert_in_range(lastLensPixel, lowerAddr, upperAddr);
 	
-	byte* lastTintPixel = lens.pixel_tints + (area - 1)*sizeof(*lens.pixel_tints);
-	assert_in_range(lastTintPixel, lowerAddr, upperAddr);
-	assert_in_range(lens.pixel_tints, lowerAddr, upperAddr);
 }
 
 static void test_can_change_window_size(void **state){
