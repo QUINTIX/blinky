@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <time.h>
 #include "qtypes.h"
 #include "mathlib.h"
 #include "fisheye.h"

@@ -15,7 +15,7 @@ DIST_DIR         ?= dist
 DEBUG            ?= N# Compile with debug info
 OPTIMIZED_CFLAGS ?= Y# Enable compiler optimisations (if DEBUG != Y)
 USE_X86_ASM      ?= Y #$(I386_GUESS)
-USE_SDL          ?= N# New (experimental) SDL video/sound/input targets
+USE_SDL          ?= Y# New (experimental) SDL video/sound/input targets
 LOCALBASE        ?= /usr/local
 QBASEDIR         ?= .# Default basedir for quake data files (Linux/BSD only)
 TARGET_OS        ?= $(HOST_OS)
@@ -664,6 +664,7 @@ CL_OBJS := \
 	fisheye/fishmem.o 	\
 	fisheye/fishlens.o	\
 	fisheye/fisheye.o	\
+	fisheye/imageutil.o 	\
 	keys.o		\
 	menu.o		\
 	pcx.o 		\

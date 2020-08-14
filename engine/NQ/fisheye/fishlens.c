@@ -1,7 +1,7 @@
 #include "qtypes.h"
-#include "fishlens.h"
 #include <math.h>
 #include <time.h>
+#include "fishlens.h"
 
 struct _lens_builder * start_lens_builder_clock_(
    struct _lens_builder *lens_builder)
@@ -72,7 +72,7 @@ vec3_u plate_uv_to_ray_(const struct _globe *globe,
 }
 
 // convenience functions for forward map calculation:
-// map uv to lens for a globe plate
+// map lens to screen uv for a given globe plate
 vec2_u lens_to_screen_uv_(lens_forward_t forward,
       const struct _globe *globe, int plate_index, const vec2_u uv)
 {
@@ -80,7 +80,7 @@ vec2_u lens_to_screen_uv_(lens_forward_t forward,
    return forward(ray);
 }
 
-//    maps uv coordinate on a texture to a screen coordinate
+// maps uv coordinate on a texture to a screen coordinate
 point2d uv_to_screen_(const struct state_paq state,
       int plate_index, const vec2_u uv)
 {
