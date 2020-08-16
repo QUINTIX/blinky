@@ -9,9 +9,9 @@
 #include "quakedef.h"
 #include "sys.h"
 #include "screen.h"
-#include "zone.h"
 #include "host.h"
 #include "cmd.h"
+#include "zone.h"
 
 #include "fisheye.h"
 #include "fishlens.h"
@@ -129,7 +129,7 @@ static void test_globe_malloc_in_range(void **state){
 	
 	struct _globe globe = *F_getGlobe();
 	byte* lastPixel = globe.pixels +
-         (globe.platesize*globe.platesize * MAX_PLATES - 1);
+	    (globe.platesize*globe.platesize * MAX_PLATES - 1);
 	
 	assert_in_range(lastPixel, lowerAddr, upperAddr);
 	assert_in_range(globe.pixels, lowerAddr, upperAddr);
@@ -145,14 +145,14 @@ static void test_lens_malloc_in_range(void **state){
 	struct _lens lens = *F_getLens();
 	
 	int area = lens.width_px * lens.height_px;
-   
-        byte* lastTintPixel = lens.pixel_tints + (area - 1);
-        assert_in_range(lastTintPixel, lowerAddr, upperAddr);
-        assert_in_range(lens.pixel_tints, lowerAddr, upperAddr);
-   
-        byte** lastLensPixel = lens.pixels + (area - 1);
+
+	byte* lastTintPixel = lens.pixel_tints + (area - 1);
+	assert_in_range(lastTintPixel, lowerAddr, upperAddr);
+	assert_in_range(lens.pixel_tints, lowerAddr, upperAddr);
+
+	byte** lastLensPixel = lens.pixels + (area - 1);
 	assert_in_range(lens.pixels, lowerAddr, upperAddr);
-        assert_in_range(lastLensPixel, lowerAddr, upperAddr);
+	assert_in_range(lastLensPixel, lowerAddr, upperAddr);
 	
 }
 
@@ -160,12 +160,30 @@ static void test_can_change_window_size(void **state){
 	struct MyState *myState = *state;
 	
 	Host_Frame(myState->lastFrameTime);
+	
 	Cbuf_InsertText(SMALLIFY); Cbuf_Execute();
 	runHostForDuration(HALF_A_SEC);
 	Cbuf_InsertText(BIGIFY); Cbuf_Execute();
 	runHostForDuration(HALF_A_SEC);
+	
 	Cbuf_InsertText(SMALLIFY); Cbuf_Execute();
+	runHostForDuration(HALF_A_SEC);
+	Cbuf_InsertText(BIGIFY); Cbuf_Execute();
+	runHostForDuration(HALF_A_SEC);
+
 	myState->lastFrameTime = runHostForDuration(HALF_A_SEC);
+}
+
+static void test_restart_video_reallocs_fisheye_buffer(void **state){
+	(void)state;
+	
+	Host_Frame(FAKE_DELTA_TIME);
+	int expectedHighMarkAfterRestart = Hunk_HighMark();
+	Cbuf_AddText("vid_restart\n");
+	Host_Frame(FAKE_DELTA_TIME);
+	int actualHighMarkAfterRestart = Hunk_HighMark();
+	
+	assert_int_equal(expectedHighMarkAfterRestart, actualHighMarkAfterRestart);
 }
 
 static void test_latlon_to_ray(void **state){
@@ -262,6 +280,7 @@ int main(void) {
 		cmocka_unit_test(test_warmup),
 		cmocka_unit_test(test_globe_malloc_in_range),
 		cmocka_unit_test(test_lens_malloc_in_range),
+		cmocka_unit_test(test_restart_video_reallocs_fisheye_buffer),
 		cmocka_unit_test(test_can_change_window_size)
 	};
 	return cmocka_run_group_tests(tests, setup, teardown);

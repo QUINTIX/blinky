@@ -2327,7 +2327,7 @@ Mod_TraceHull_r(const hull_t *hull, int nodenum,
 	return false;
 
 #ifdef PARANOID
-    if (Mod_HullPointContents(sv_hullmodel, mid, child) == CONTENTS_SOLID) {
+    if (Mod_HullPointContents(hull, mid, child) == CONTENTS_SOLID) {
 	Con_Printf("mid PointInHullSolid\n");
 	return false;
     }

@@ -6,4 +6,6 @@
 void createOrReallocBuffers(struct _globe* globe, struct _lens* lens,
 		int area, int platesize);
 
+qboolean hasResizedOrRestarted(int width, int height);
+
 #endif

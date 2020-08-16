@@ -327,14 +327,13 @@ void F_RenderView(void)
    #define MIN(a,b) ((a) < (b) ? (a) : (b))
    int platesize = globe.platesize = MIN(lens.height_px, lens.width_px);
    int area = lens.width_px * lens.height_px;
-   int sizechange = (pwidth!=lens.width_px) || (pheight!=lens.height_px);
-
-   // allocate new buffers if size changes
-   if(sizechange){
+   
+   qboolean needNewBuffers = hasResizedOrRestarted(lens.width_px, lens.height_px);
+   if(needNewBuffers){
       createOrReallocBuffers(&globe, &lens, area, platesize);
    }
    // recalculate lens
-   if (sizechange || zoom.changed || lens.changed || globe.changed) {
+   if (needNewBuffers || zoom.changed || lens.changed || globe.changed) {
       memset(lens.pixels, 0, area*sizeof(byte*));
       memset(lens.pixel_tints, 255, area*sizeof(byte));
 
