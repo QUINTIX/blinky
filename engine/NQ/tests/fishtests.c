@@ -150,7 +150,7 @@ static void test_lens_malloc_in_range(void **state){
 	assert_in_range(lastTintPixel, lowerAddr, upperAddr);
 	assert_in_range(lens.pixel_tints, lowerAddr, upperAddr);
 
-	byte** lastLensPixel = lens.pixels + (area - 1);
+	uint32_t* lastLensPixel = lens.pixels + (area - 1);
 	assert_in_range(lens.pixels, lowerAddr, upperAddr);
 	assert_in_range(lastLensPixel, lowerAddr, upperAddr);
 	
@@ -218,6 +218,7 @@ static void test_plate_uv_to_ray(void **state){
 	
 	const vec2_u uv = {.uv = {.u=0.0, .v=0.5}};
 	struct _globe globe;
+   globe.plates[0].dist = 1.0;
 	
 	const vec3_u forward =	{.vec = {0., 0., 1.}};
 	const vec3_u right =	{.vec = {1., 0., 0.}};
@@ -268,6 +269,15 @@ static void test_uv_to_screen(void **state){
 	mockScriptState = 0;
 }
 
+//will only fail in 64bit mode. Fortunately macs only support 64bit
+static void test_lens_pixel_index_is_not_absolute_pointer(void **state){
+(void)state;
+   struct _lens *lens = F_getLens();
+   
+   assert_true(sizeof(*lens->pixels) < sizeof(void*));
+}
+
+
 int main(void) {
 	const struct CMUnitTest tests[] = {
 		cmocka_unit_test(test_post_init),
@@ -280,8 +290,10 @@ int main(void) {
 		cmocka_unit_test(test_warmup),
 		cmocka_unit_test(test_globe_malloc_in_range),
 		cmocka_unit_test(test_lens_malloc_in_range),
-		cmocka_unit_test(test_restart_video_reallocs_fisheye_buffer),
-		cmocka_unit_test(test_can_change_window_size)
+           cmocka_unit_test(test_lens_pixel_index_is_not_absolute_pointer),
+
+            cmocka_unit_test(test_restart_video_reallocs_fisheye_buffer),
+		cmocka_unit_test(test_can_change_window_size),
 	};
 	return cmocka_run_group_tests(tests, setup, teardown);
 }

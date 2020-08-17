@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdint.h>
 #include "mathlib.h"
 #ifndef FISHEYE_H_
 #define FISHEYE_H_
@@ -110,7 +111,7 @@ struct _lens {
    //
    //    <------- width_px ------->
    //
-   byte **pixels;
+   uint32_t *pixels;
 
    // retrieves a pointer to a lens pixel
    #define LENSPIXEL(x,y) (lens.pixels + (x) + (y)*lens.width_px)

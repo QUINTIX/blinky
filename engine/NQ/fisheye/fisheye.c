@@ -1422,7 +1422,7 @@ static void set_lensmap_from_plate(int lx, int ly, int px, int py, int plate_ind
    globe.plates[plate_index].display = 1;
 
    // map the lens pixel to this cubeface pixel
-   *LENSPIXEL(lx,ly) = GLOBEPIXEL(plate_index,px,py);
+   *LENSPIXEL(lx,ly) = RELATIVE_GLOBEPIXEL(plate_index,px,py);
 
    set_lensmap_grid(lx,ly,px,py,plate_index);
 }
@@ -1851,7 +1851,7 @@ static void create_lensmap(void)
 // draw the lensmap to the vidbuffer
 static void render_lensmap(void)
 {
-   byte **lmap = lens.pixels;
+   uint32_t *lmap = lens.pixels;
    byte *pmap = lens.pixel_tints;
    int x, y;
    for(y=0; y<lens.height_px; y++)
@@ -1859,12 +1859,14 @@ static void render_lensmap(void)
          if (*lmap) {
             int lx = x+scr_vrect.x;
             int ly = y+scr_vrect.y;
+            byte* pixAddr = globe.pixels + *lmap;
             if (rubix.enabled) {
                int i = *pmap;
-               *VBUFFER(lx,ly) = i != 255 ? globe.plates[i].palette[**lmap] : **lmap;
+              
+               *VBUFFER(lx,ly) = i != 255 ? globe.plates[i].palette[*pixAddr] : *pixAddr;
             }
             else {
-               *VBUFFER(lx,ly) = **lmap;
+               *VBUFFER(lx,ly) = *pixAddr;
             }
          }
 }
