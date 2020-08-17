@@ -269,7 +269,7 @@ static void test_uv_to_screen(void **state){
 	mockScriptState = 0;
 }
 
-//will only fail in 64bit mode. Fortunately macs only support 64bit
+//will only pass in 64bit compilation. Fortunately macs only support 64bit
 static void test_lens_pixel_index_is_not_absolute_pointer(void **state){
 (void)state;
    struct _lens *lens = F_getLens();
