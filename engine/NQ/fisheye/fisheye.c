@@ -450,19 +450,7 @@ static void create_palmap(void){
 
 static void cmd_dumppal(void)
 {
-   int i;
-   byte *pal = host_basepal;
-   FILE *pFile = fopen("palette","w");
-   if (NULL == pFile) {
-      Con_Printf("could not open \"palette\" for writing\n");
-      return;
-   }
-   for (i=0; i<256; ++i) {
-      fprintf(pFile, "%d, %d, %d,\n",
-            pal[0],pal[1],pal[2]);
-      pal+=3;
-   }
-   fclose(pFile);
+   dumppal(host_basepal);
 }
 
 static void cmd_rubix(void)
@@ -1832,7 +1820,7 @@ static void create_lensmap(void)
 
    // test if this lens can support the current fov
    if (!calc_zoom()) {
-      //Con_Printf("This lens could not be initialized.\n");
+      Con_Printf("This lens could not be initialized.\n");
       return;
    }
 

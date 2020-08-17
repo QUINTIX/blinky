@@ -4,10 +4,11 @@
 #include "fishlens.h"
 #include "zone.h"
 #include "common.h"
+#include "console.h"
 #include "pcx.h"	//unwanted dependency
 
 static int find_closest_pal_index_(int r, int g, int b, const byte* pal_){
-   byte* pal = pal_;
+   byte* pal = (byte*)pal_;
    int i;
    int mindist = 256*256*256;
    int minindex = 0;
@@ -54,7 +55,7 @@ byte* makePalmapForPlate_(const byte *inPal, byte palleteLookup[256],
             break;
    }
    
-   byte* pal = inPal;
+   byte* pal = (byte*)inPal;
    for (i=0; i<256; ++i)
    {
          int r = pal[0];
@@ -151,4 +152,19 @@ void WritePCXplate_(struct _globe* globe, ray_to_plate_index_t ray_to_plate,
 // write output file
     length = pack - (byte *)pcx;
     COM_WriteFile(filename, pcx, length);
+}
+
+void dumppal(const byte* inPal){
+   byte *pal = (byte*)inPal;
+   FILE *pFile = fopen("palette","w");
+   if (NULL == pFile) {
+      Con_Printf("could not open \"palette\" for writing\n");
+      return;
+   }
+   for (int i=0; i<256; ++i) {
+      fprintf(pFile, "%d, %d, %d,\n",
+            pal[0],pal[1],pal[2]);
+      pal+=3;
+   }
+   fclose(pFile);
 }
