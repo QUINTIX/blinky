@@ -662,9 +662,10 @@ CL_OBJS := \
 	cl_tent.o	\
 	console.o	\
 	fisheye/fishmem.o 	\
+	fisheye/fishcmd.o 	\
 	fisheye/fishlens.o	\
-	fisheye/fisheye.o	\
 	fisheye/imageutil.o 	\
+	fisheye/fisheye.o	\
 	keys.o		\
 	menu.o		\
 	pcx.o 		\

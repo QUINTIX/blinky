@@ -12,11 +12,10 @@
 #include "host.h"
 #include "cmd.h"
 #include "zone.h"
-#include <SDL_surface.h>
-#include <SDL_image.h>
 
 #include "fisheye.h"
 #include "fishlens.h"
+#include "imageutil.h"
 
 #define stringify__(x) #x
 #define stringify(x) stringify__(x)
@@ -127,38 +126,12 @@ static void runConsoleSetupScript(double fakeDeltaTime){
 	Host_Frame(fakeDeltaTime);
 }
 
-static void dumpTints(struct _lens* lens){
-   SDL_Surface *surf = SDL_CreateRGBSurfaceWithFormatFrom(
-      lens->pixel_tints, lens->width_px, lens->height_px, 8, lens->width_px,
-         SDL_PIXELFORMAT_INDEX8);
-  
-    SDL_Palette* pal = SDL_AllocPalette(256);
-   
-   pal->colors[0] = (SDL_Color){.r=255,.g=0,.b=0};
-   pal->colors[1] = (SDL_Color){.r=255,.g=255,.b=0};
-   pal->colors[2] = (SDL_Color){.r=0,.g=255,.b=0};
-   pal->colors[3] = (SDL_Color){.r=0,.g=255,.b=255};
-   pal->colors[4] = (SDL_Color){.r=0,.g=0,.b=255};
-   pal->colors[5] = (SDL_Color){.r=255,.g=0,.b=255};
-   pal->colors[255] = (SDL_Color){.r=0,.g=0,.b=0};
-   
-   SDL_SetSurfacePalette(surf, pal);
-   
-   IMG_SavePNG(surf, "tints.png");
-
-   SDL_FreePalette(pal);
-   
-   SDL_FreeSurface(surf);
+static void dumpTints_(struct _lens* lens){
+   dumpTints(lens, "tints.png");
 }
 
-static void dumpIndicies(struct _lens* lens){
-   SDL_Surface *surf = SDL_CreateRGBSurfaceWithFormatFrom(lens->pixels,
-         lens->width_px, lens->height_px, 32, lens->width_px,
-         SDL_PIXELFORMAT_BGRX8888);
-   
-   IMG_SavePNG(surf, "lens.png");
-   
-   SDL_FreeSurface(surf);
+static void dumpIndicies_(struct _lens* lens){
+   dumpIndicies(lens, "lens.png");
 }
 
 static void test_warmup(void **state){
@@ -354,8 +327,8 @@ static void test_save_rubix(void **state){
    assert_in_range(colorCount[1], minPixelsPerFace, maxPixelsPerFace);
    assert_in_range(colorCount[2], minPixelsPerFace, maxPixelsPerFace);
    
-   dumpTints(&lens);
-   dumpIndicies(&lens);
+   dumpTints_(&lens);
+   dumpIndicies_(&lens);
 }
 
 //will only pass in 64bit compilation. Fortunately macs only support 64bit
@@ -383,7 +356,7 @@ int main(void) {
 
 		cmocka_unit_test(test_restart_video_reallocs_fisheye_buffer),
 		cmocka_unit_test(test_can_change_window_size),
-         cmocka_unit_test(test_save_rubix)
+		cmocka_unit_test(test_save_rubix)
 	};
 	return cmocka_run_group_tests(tests, setup, teardown);
 }

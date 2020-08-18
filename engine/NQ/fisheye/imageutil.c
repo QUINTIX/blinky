@@ -141,7 +141,6 @@ void dumppal(const byte* inPal){
    fclose(pFile);
 }
 
-
 SDL_Palette* makePaddedPalette(byte* input){
    SDL_Palette* pal = SDL_AllocPalette(256);
    byte* curColor = input;
@@ -153,4 +152,38 @@ SDL_Palette* makePaddedPalette(byte* input){
       pal->colors[i++] = (SDL_Color){.r=r,.g=g,.b=b};
    }
    return pal;
+}
+
+void dumpTints(struct _lens* lens, char *filename){
+   SDL_Surface *surf = SDL_CreateRGBSurfaceWithFormatFrom(
+      lens->pixel_tints, lens->width_px, lens->height_px, 8, lens->width_px,
+         SDL_PIXELFORMAT_INDEX8);
+  
+    SDL_Palette* pal = SDL_AllocPalette(256);
+   
+   pal->colors[0] = (SDL_Color){.r=255,.g=0,.b=0};
+   pal->colors[1] = (SDL_Color){.r=255,.g=255,.b=0};
+   pal->colors[2] = (SDL_Color){.r=0,.g=255,.b=0};
+   pal->colors[3] = (SDL_Color){.r=0,.g=255,.b=255};
+   pal->colors[4] = (SDL_Color){.r=0,.g=0,.b=255};
+   pal->colors[5] = (SDL_Color){.r=255,.g=0,.b=255};
+   pal->colors[255] = (SDL_Color){.r=0,.g=0,.b=0};
+   
+   SDL_SetSurfacePalette(surf, pal);
+   
+   IMG_SavePNG(surf, filename);
+
+   SDL_FreePalette(pal);
+   
+   SDL_FreeSurface(surf);
+}
+
+void dumpIndicies(struct _lens* lens, char* filename){
+   SDL_Surface *surf = SDL_CreateRGBSurfaceWithFormatFrom(lens->pixels,
+         lens->width_px, lens->height_px, 32, lens->width_px,
+         SDL_PIXELFORMAT_BGRX8888);
+   
+   IMG_SavePNG(surf, filename);
+   
+   SDL_FreeSurface(surf);
 }

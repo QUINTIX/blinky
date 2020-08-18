@@ -12,3 +12,7 @@ void WritePNGplate_(struct _globe* globe,
 void dumppal(const byte* inPal);
 
 SDL_Palette* makePaddedPalette(byte* input);
+
+void dumpTints(struct _lens* lens, char *filename);
+
+void dumpIndicies(struct _lens* lens, char* filename);

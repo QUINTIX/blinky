@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
+#include "qtypes.h"
 #include "mathlib.h"
 #ifndef FISHEYE_H_
 #define FISHEYE_H_
@@ -10,6 +11,9 @@ void F_Init(void);
 void F_Shutdown(void);
 void F_RenderView(void);
 void F_WriteConfig(FILE *f);
+
+qboolean LUA_load_lens(void);
+qboolean LUA_load_globe(void);
 
 typedef int (*ray_to_plate_index_t)(vec3_t ray);
 
@@ -139,4 +143,81 @@ struct _lens {
 
 struct _lens* F_getLens(void);
 
+struct _zoom {
+
+   qboolean changed;
+
+   enum { ZOOM_NONE, ZOOM_FOV, ZOOM_VFOV, ZOOM_COVER, ZOOM_CONTAIN } type;
+
+   // desired FOV in degrees
+   int fov;
+
+   // maximum FOV width and height of the current lens in degrees
+   int max_vfov, max_fov;
+
+};
+
+
+struct _rubix {
+
+   // boolean signaling if rubix should be drawn
+   qboolean enabled;
+
+   int numcells;
+   double cell_size;
+   double pad_size;
+
+   // We color a plate like the side of a rubix cube so we
+   // can see how the lens distorts the plates. (indicatrix)
+   //
+   // EXAMPLE:
+   //
+   //    numcells  = 3
+   //    cell_size = 2
+   //    pad_size  = 1
+   //
+   //  A globe plate is split into a grid of "units"
+   //  The squares that are colored below are called "cells".
+   //  You can see below that there are 3x3 colored cells,
+   //  since numcells=3.
+   //
+   //  You can see below that each cell is 2x2 units large,
+   //  since cell_size=2.
+   //
+   //  Finally, you can see the cells have 1 unit of padding,
+   //  since pad_size=1.
+   //
+   //    ---------------------------------------------------
+   //    |    |    |    |    |    |    |    |    |    |    |
+   //    |    |    |    |    |    |    |    |    |    |    |
+   //    |----|----|----|----|----|----|----|----|----|----|
+   //    |    |XXXXXXXXX|    |XXXXXXXXX|    |XXXXXXXXX|    |
+   //    |    |XXXXXXXXX|    |XXXXXXXXX|    |XXXXXXXXX|    |
+   //    |----|XXXXXXXXX|----|XXXXXXXXX|----|XXXXXXXXX|----|
+   //    |    |XXXXXXXXX|    |XXXXXXXXX|    |XXXXXXXXX|    |
+   //    |    |XXXXXXXXX|    |XXXXXXXXX|    |XXXXXXXXX|    |
+   //    |----|----|----|----|----|----|----|----|----|----|
+   //    |    |    |    |    |    |    |    |    |    |    |
+   //    |    |    |    |    |    |    |    |    |    |    |
+   //    |----|----|----|----|----|----|----|----|----|----|
+   //    |    |XXXXXXXXX|    |XXXXXXXXX|    |XXXXXXXXX|    |
+   //    |    |XXXXXXXXX|    |XXXXXXXXX|    |XXXXXXXXX|    |
+   //    |----|XXXXXXXXX|----|XXXXXXXXX|----|XXXXXXXXX|----|
+   //    |    |XXXXXXXXX|    |XXXXXXXXX|    |XXXXXXXXX|    |
+   //    |    |XXXXXXXXX|    |XXXXXXXXX|    |XXXXXXXXX|    |
+   //    |----|----|----|----|----|----|----|----|----|----|
+   //    |    |    |    |    |    |    |    |    |    |    |
+   //    |    |    |    |    |    |    |    |    |    |    |
+   //    |----|----|----|----|----|----|----|----|----|----|
+   //    |    |XXXXXXXXX|    |XXXXXXXXX|    |XXXXXXXXX|    |
+   //    |    |XXXXXXXXX|    |XXXXXXXXX|    |XXXXXXXXX|    |
+   //    |----|XXXXXXXXX|----|XXXXXXXXX|----|XXXXXXXXX|----|
+   //    |    |XXXXXXXXX|    |XXXXXXXXX|    |XXXXXXXXX|    |
+   //    |    |XXXXXXXXX|    |XXXXXXXXX|    |XXXXXXXXX|    |
+   //    |----|----|----|----|----|----|----|----|----|----|
+   //    |    |    |    |    |    |    |    |    |    |    |
+   //    |    |    |    |    |    |    |    |    |    |    |
+   //    ---------------------------------------------------
+
+};
 #endif
