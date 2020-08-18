@@ -12,6 +12,8 @@
 #include "host.h"
 #include "cmd.h"
 #include "zone.h"
+#include <SDL_surface.h>
+#include <SDL_image.h>
 
 #include "fisheye.h"
 #include "fishlens.h"
@@ -89,6 +91,24 @@ static double runHostForDuration(double duration){
 	return deltatime;
 }
 
+static double runHostUntilLensIsDone(double lastDuration){
+      assert_true(lastDuration > 0.);
+   double newtime = Sys_DoubleTime();
+   double oldtime = newtime - lastDuration;
+   double deltatime =lastDuration;
+   struct _lens_builder* lensStatus = F_getStatus();
+   
+   while(lensStatus->working){
+      newtime = Sys_DoubleTime();
+      deltatime = newtime - oldtime;
+      if (deltatime > sys_ticrate.value * 2){
+              oldtime = newtime; }
+      else{ oldtime += deltatime; }
+      Host_Frame(deltatime);
+   }
+   return deltatime;
+}
+
 static void test_post_init(void **state){
 	struct MyState *myState = *state;
 	const char* text = myState->testString;
@@ -107,6 +127,40 @@ static void runConsoleSetupScript(double fakeDeltaTime){
 	Host_Frame(fakeDeltaTime);
 }
 
+static void dumpTints(struct _lens* lens){
+   SDL_Surface *surf = SDL_CreateRGBSurfaceWithFormatFrom(
+      lens->pixel_tints, lens->width_px, lens->height_px, 8, lens->width_px,
+         SDL_PIXELFORMAT_INDEX8);
+  
+    SDL_Palette* pal = SDL_AllocPalette(256);
+   
+   pal->colors[0] = (SDL_Color){.r=255,.g=0,.b=0};
+   pal->colors[1] = (SDL_Color){.r=255,.g=255,.b=0};
+   pal->colors[2] = (SDL_Color){.r=0,.g=255,.b=0};
+   pal->colors[3] = (SDL_Color){.r=0,.g=255,.b=255};
+   pal->colors[4] = (SDL_Color){.r=0,.g=0,.b=255};
+   pal->colors[5] = (SDL_Color){.r=255,.g=0,.b=255};
+   pal->colors[255] = (SDL_Color){.r=0,.g=0,.b=0};
+   
+   SDL_SetSurfacePalette(surf, pal);
+   
+   IMG_SavePNG(surf, "tints.png");
+
+   SDL_FreePalette(pal);
+   
+   SDL_FreeSurface(surf);
+}
+
+static void dumpIndicies(struct _lens* lens){
+   SDL_Surface *surf = SDL_CreateRGBSurfaceWithFormatFrom(lens->pixels,
+         lens->width_px, lens->height_px, 32, lens->width_px,
+         SDL_PIXELFORMAT_BGRX8888);
+   
+   IMG_SavePNG(surf, "lens.png");
+   
+   SDL_FreeSurface(surf);
+}
+
 static void test_warmup(void **state){
 	struct MyState *myState = *state;
 	
@@ -117,6 +171,8 @@ static void test_warmup(void **state){
 	Sys_Printf("%0.3f seconds elapsed before full init\n", endtime - starttime);
 	runHostForDuration(TIME_TO_GIB);
 	SCR_CenterPrint("Warmup nearly done.");
+   Hunk_Check();
+   Cbuf_AddText("hunk print\n");
 	myState->lastFrameTime = runHostForDuration(HALF_A_SEC);
 }
 
@@ -184,6 +240,9 @@ static void test_restart_video_reallocs_fisheye_buffer(void **state){
 	int actualHighMarkAfterRestart = Hunk_HighMark();
 	
 	assert_int_equal(expectedHighMarkAfterRestart, actualHighMarkAfterRestart);
+   Hunk_Check();
+   Cbuf_AddText("hunk print\n");
+   Host_Frame(FAKE_DELTA_TIME);
 }
 
 static void test_latlon_to_ray(void **state){
@@ -269,6 +328,36 @@ static void test_uv_to_screen(void **state){
 	mockScriptState = 0;
 }
 
+static void test_save_rubix(void **state){
+   struct MyState *myState = *state;
+   Cbuf_AddText("f_globe tetra; f_lense panini; f_fov 270;\n");
+   myState->lastFrameTime = runHostUntilLensIsDone(myState->lastFrameTime);
+   
+   struct _lens lens = *F_getLens();
+   
+   int colorCount[5] = {0,0,0,0,0};
+   int tintPixelCount = lens.width_px * lens.height_px;
+   
+   for(int i=0; i < tintPixelCount; i++){
+      byte tint = lens.pixel_tints[i];
+      if(255 == tint){
+         tint = 4;
+      }
+      assert_in_range(tint, 0, 4);
+      colorCount[tint]++;
+   }
+   
+   int maxPixelsPerFace = tintPixelCount/4;
+   int minPixelsPerFace = 0x100;
+   
+   assert_in_range(colorCount[0], minPixelsPerFace, maxPixelsPerFace);
+   assert_in_range(colorCount[1], minPixelsPerFace, maxPixelsPerFace);
+   assert_in_range(colorCount[2], minPixelsPerFace, maxPixelsPerFace);
+   
+   dumpTints(&lens);
+   dumpIndicies(&lens);
+}
+
 //will only pass in 64bit compilation. Fortunately macs only support 64bit
 static void test_lens_pixel_index_is_not_absolute_pointer(void **state){
 (void)state;
@@ -290,10 +379,11 @@ int main(void) {
 		cmocka_unit_test(test_warmup),
 		cmocka_unit_test(test_globe_malloc_in_range),
 		cmocka_unit_test(test_lens_malloc_in_range),
-           cmocka_unit_test(test_lens_pixel_index_is_not_absolute_pointer),
+		cmocka_unit_test(test_lens_pixel_index_is_not_absolute_pointer),
 
-            cmocka_unit_test(test_restart_video_reallocs_fisheye_buffer),
+		cmocka_unit_test(test_restart_video_reallocs_fisheye_buffer),
 		cmocka_unit_test(test_can_change_window_size),
+         cmocka_unit_test(test_save_rubix)
 	};
 	return cmocka_run_group_tests(tests, setup, teardown);
 }

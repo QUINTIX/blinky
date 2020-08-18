@@ -247,7 +247,7 @@ static void render_lensmap(void);
 static void render_plate(int plate_index, vec3_t forward, vec3_t right, vec3_t up);
 
 // globe saver functions
-static void WritePCXplate(char *filename, int plate_index, int with_margins);
+static void WritePNGplate(char *filename, int plate_index, int with_margins);
 static void save_globe(void);
 
 // retrieves a pointer to a pixel in the video buffer
@@ -334,7 +334,7 @@ void F_RenderView(void)
    }
    // recalculate lens
    if (needNewBuffers || zoom.changed || lens.changed || globe.changed) {
-      memset(lens.pixels, 0, area*sizeof(byte*));
+      memset(lens.pixels, 0, area*sizeof(*lens.pixels));
       memset(lens.pixel_tints, 255, area*sizeof(byte));
 
       // load lens again
@@ -905,9 +905,9 @@ static qboolean calc_zoom(void)
 
 // copied from WritePCXfile in NQ/screen.c
 // write a plate 
-static void WritePCXplate(char *filename, int plate_index, int with_margins){
+static void WritePNGplate(char *filename, int plate_index, int with_margins){
    const byte *palette = host_basepal;
-   WritePCXplate_(&globe, ray_to_plate_index, palette, filename, plate_index, with_margins);
+   WritePNGplate_(&globe, ray_to_plate_index, palette, filename, plate_index, with_margins);
 }
 
 static void save_globe(void)
@@ -921,8 +921,8 @@ static void save_globe(void)
 
    for (i=0; i<globe.numplates; ++i) 
    {
-      qsnprintf(pcxname, 32, "%s%d.pcx", globe.save.name, i);
-      WritePCXplate(pcxname, i, globe.save.with_margins);
+      qsnprintf(pcxname, 32, "%s%d.png", globe.save.name, i);
+      WritePNGplate(pcxname, i, globe.save.with_margins);
 
     Con_Printf("Wrote %s\n", pcxname);
    }
@@ -1906,4 +1906,7 @@ struct _lens* F_getLens(void){
 	return &lens;
 }
 
+struct _lens_builder* F_getStatus(void){
+   return &lens_builder;
+}
 // vim: et:ts=3:sts=3:sw=3

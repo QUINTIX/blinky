@@ -12,9 +12,9 @@ BUILD_DIR        ?= build
 BIN_DIR          ?= bin
 DOC_DIR          ?= doc
 DIST_DIR         ?= dist
-DEBUG            ?= N# Compile with debug info
-OPTIMIZED_CFLAGS ?= Y# Enable compiler optimisations (if DEBUG != Y)
-USE_X86_ASM      ?= Y #$(I386_GUESS)
+DEBUG            ?= N # Compile with debug info
+OPTIMIZED_CFLAGS ?= Y # Enable compiler optimisations (if DEBUG != Y)
+USE_X86_ASM      ?= $(I386_GUESS)
 USE_SDL          ?= Y# New (experimental) SDL video/sound/input targets
 LOCALBASE        ?= /usr/local
 QBASEDIR         ?= .# Default basedir for quake data files (Linux/BSD only)
@@ -179,7 +179,7 @@ ifneq (,$(filter sdl,$(VID_TARGET) $(SND_TARGET) $(IN_TARGET)))
 #SDL_LFLAGS_DEFAULT := -framework SDL2
 # else
 SDL_CFLAGS_DEFAULT := $(shell sdl2-config --cflags)
-SDL_LFLAGS_DEFAULT := $(shell sdl2-config --libs)
+SDL_LFLAGS_DEFAULT := $(shell sdl2-config --libs) -lSDL2_image
 #endif
 SDL_CFLAGS ?= $(SDL_CFLAGS_DEFAULT)
 SDL_LFLAGS ?= $(SDL_LFLAGS_DEFAULT)
@@ -263,7 +263,7 @@ cc-i386 = $(if $(subst __i386,,$(shell echo __i386 | $(CC) -E -xc - | tail -n 1)
 libdir-check = $(shell if [ -d "$(1)" ]; then printf -- '-L%s' "$(1)"; fi)
 
 GCC_VERSION := $(call cc-version,)
-I386_GUESS  := $(call cc-i386)
+I386_GUESS  := $(call cc-i386) #there must be a better way to do this
 
 # -------------------------
 # Special include/lib dirs

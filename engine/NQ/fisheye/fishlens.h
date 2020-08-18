@@ -30,6 +30,8 @@ struct _lens_builder
    } forward_state;
 };
 
+struct _lens_builder* F_getStatus(void);
+
 typedef union _vec3_u{
   vec3_t vec;
   struct _vec3_s {

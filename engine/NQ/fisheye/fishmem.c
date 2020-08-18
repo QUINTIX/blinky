@@ -49,7 +49,7 @@ void createOrReallocBuffers(struct _globe* globe, struct _lens* lens,
    void* tintsPtr = lensPixelsPtr + lens_pixel_space;
    
    globe->pixels = (byte*)basePtr;
-   lens->pixels = (byte**)lensPixelsPtr;
+   lens->pixels = (uint32_t*)lensPixelsPtr;
    lens->pixel_tints = (byte*)tintsPtr;
 	
    lastHighMark = Hunk_HighMark();
