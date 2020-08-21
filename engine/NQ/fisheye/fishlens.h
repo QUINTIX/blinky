@@ -62,7 +62,7 @@ typedef vec3_u (*lens_reverse_t)(vec2_u uv);
 
 struct state_paq {
    lens_forward_t forward;
-   lens_reverse_t reverse;
+   lens_reverse_t inverse;
    const struct _globe *globe;
    const struct _lens *lens;
 };

@@ -15,6 +15,12 @@ void F_WriteConfig(FILE *f);
 qboolean LUA_load_lens(void);
 qboolean LUA_load_globe(void);
 
+typedef enum fe_status {
+    NONSENSE_VALUE = -1,
+    NO_VALUE_RETURNED = 0,
+    FE_SUCCESS = 1
+} fisheye_status;
+
 typedef int (*ray_to_plate_index_t)(vec3_t ray);
 
 struct _globe {

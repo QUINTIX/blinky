@@ -70,6 +70,10 @@ static struct _zoom zoom;
 
 static struct _rubix rubix;
 
+static fisheye_status last_status;
+
+static struct state_paq arg_consolidator;
+
 // -------------------------------------------------------------------------------- 
 // |                                                                              |
 // |                      FUNCTION DECLARATIONS                                   |
@@ -103,7 +107,10 @@ static int CtoLUA_plate_to_ray(lua_State *L);
 
 // lua->c (lua functions for use in c)
 static int LUAtoC_lens_inverse(double x, double y, vec3_t ray);
+static vec3_u LUAtoC_lens_inverse_(vec2_u xy);
 static int LUAtoC_lens_forward(vec3_t ray, double *x, double *y);
+static vec2_u LUAtoC_lens_forward_(vec3_u ray);
+
 static int LUAtoC_globe_plate(vec3_t ray, int *plate);
 
 // functions to manage the data and functions in the Lua interpreter state
@@ -164,6 +171,13 @@ static void save_globe(void);
 
 void F_Init(void)
 {
+    
+   arg_consolidator = (struct state_paq){
+        .forward = LUAtoC_lens_forward_,
+        .inverse = LUAtoC_lens_inverse_,
+        .globe = &globe,
+        .lens = &lens
+   };
    lens_builder.working = false;
    lens_builder.seconds_per_frame = 1.0f / 60;
 
@@ -439,10 +453,11 @@ static qboolean calc_zoom(void)
       // try to scale based on FOV using the forward map
       if (lua_refs.lens_forward != -1) {
          vec3_t ray;
-         double x,y;
+         double x=1.,y=1.;
          double fovr = zoom.fov * M_PI / 180;
          if (zoom.type == ZOOM_FOV) {
-            latlon_to_ray(0,fovr*0.5,ray);
+            vec3_u ray_ = latlon_to_ray_((vec2_u){0, fovr*0.5});
+            VectorCopy(ray_.vec, ray);
             if (LUAtoC_lens_forward(ray,&x,&y)) {
                lens.scale = x / (lens.width_px * 0.5);
             }
@@ -452,7 +467,8 @@ static qboolean calc_zoom(void)
             }
          }
          else if (zoom.type == ZOOM_VFOV) {
-            latlon_to_ray(fovr*0.5,0,ray);
+            vec3_u ray_ =latlon_to_ray_((vec2_u){fovr*0.5,0});
+            VectorCopy(ray_.vec, ray);
             if (LUAtoC_lens_forward(ray,&x,&y)) {
                lens.scale = y / (lens.height_px * 0.5);
             }
@@ -599,7 +615,7 @@ static int CtoLUA_plate_to_ray(lua_State *L)
 // |                                                                              |
 // --------------------------------------------------------------------------------
 
-static int LUAtoC_lens_inverse(double x, double y, vec3_t ray)
+static fisheye_status LUAtoC_lens_inverse(double x, double y, vec3_t ray)
 {
    int top = lua_gettop(lua);
    lua_rawgeti(lua, LUA_REGISTRYINDEX, lua_refs.lens_inverse);
@@ -608,7 +624,7 @@ static int LUAtoC_lens_inverse(double x, double y, vec3_t ray)
    lua_call(lua, 2, LUA_MULTRET);
 
    int numret = lua_gettop(lua) - top;
-   int status;
+   fisheye_status status;
 
    switch(numret) {
       case 3:
@@ -617,34 +633,34 @@ static int LUAtoC_lens_inverse(double x, double y, vec3_t ray)
             ray[1] = lua_tonumber(lua, -2);
             ray[2] = lua_tonumber(lua, -1);
             VectorNormalize(ray);
-            status = 1;
+            status = FE_SUCCESS;
          }
          else {
             Con_Printf("lens_inverse returned a non-number value for x,y,z\n");
-            status = -1;
+            status = NONSENSE_VALUE;
          }
          break;
 
       case 1:
          if (lua_isnil(lua,-1)) {
-            status = 0;
+            status = NO_VALUE_RETURNED;
          }
          else {
-            status = -1;
+            status = NONSENSE_VALUE;
             Con_Printf("lens_inverse returned a single non-nil value\n");
          }
          break;
 
       default:
          Con_Printf("lens_inverse returned %d values instead of 3\n", numret);
-         status = -1;
+         status = FE_SUCCESS;
    }
 
    lua_pop(lua, numret);
    return status;
 }
 
-static int LUAtoC_lens_forward(vec3_t ray, double *x, double *y)
+static fisheye_status LUAtoC_lens_forward(vec3_t ray, double *x, double *y)
 {
    int top = lua_gettop(lua);
    lua_rawgeti(lua, LUA_REGISTRYINDEX, lua_refs.lens_forward);
@@ -654,41 +670,54 @@ static int LUAtoC_lens_forward(vec3_t ray, double *x, double *y)
    lua_call(lua, 3, LUA_MULTRET);
 
    int numret = lua_gettop(lua) - top;
-   int status;
+   fisheye_status status;
 
    switch (numret) {
       case 2:
          if (lua_isnumber(lua,-2) && lua_isnumber(lua,-1)) {
             *x = lua_tonumber(lua, -2);
             *y = lua_tonumber(lua, -1);
-            status = 1;
+            status = FE_SUCCESS;
          }
          else {
             Con_Printf("lens_forward returned a non-number value for x,y\n");
-            status = -1;
+            status = NONSENSE_VALUE;
          }
          break;
 
       case 1:
          if (lua_isnil(lua,-1)) {
-            status = 0;
+            status = NO_VALUE_RETURNED;
          }
          else {
-            status = -1;
+            status = NONSENSE_VALUE;
             Con_Printf("lens_forward returned a single non-nil value\n");
          }
          break;
 
       default:
          Con_Printf("lens_forward returned %d values instead of 2\n", numret);
-         status = -1;
+         status = NONSENSE_VALUE;
    }
 
    lua_pop(lua,numret);
    return status;
 }
 
-static int LUAtoC_globe_plate(vec3_t ray, int *plate)
+//out variables should be darned to hecc
+static vec2_u LUAtoC_lens_forward_(vec3_u ray){
+    double u, v;
+    last_status = LUAtoC_lens_forward(ray.vec, &u, &v);
+    return (vec2_u){u,v};
+}
+
+static vec3_u LUAtoC_lens_inverse_(vec2_u xy){
+    vec3_u ray;
+    last_status = LUAtoC_lens_inverse(xy.xy.x, xy.xy.y, ray.vec);
+    return ray;
+}
+
+static fisheye_status LUAtoC_globe_plate(vec3_t ray, int *plate)
 {
    lua_rawgeti(lua, LUA_REGISTRYINDEX, lua_refs.globe_plate);
    lua_pushnumber(lua, ray[0]);
@@ -699,12 +728,12 @@ static int LUAtoC_globe_plate(vec3_t ray, int *plate)
    if (!lua_isnumber(lua, -1))
    {
       lua_pop(lua,1);
-      return 0;
+      return NO_VALUE_RETURNED;
    }
 
-   *plate = lua_tointeger(lua,-1);
+   *plate = (int)lua_tointeger(lua,-1);
    lua_pop(lua,1);
-   return 1;
+   return FE_SUCCESS;
 }
 
 // -------------------------------------------------------------------------------- 
@@ -1086,7 +1115,9 @@ static int ray_to_plate_index(vec3_t ray)
       if (LUAtoC_globe_plate(ray, &plate_index)) {
          return plate_index;
       }
-      return -1;
+      last_status = NONSENSE_VALUE;
+      return NONSENSE_VALUE; //TODO: don't use index for state
+       
    }
 
    // maximum dotproduct 
@@ -1163,11 +1194,11 @@ static qboolean resume_lensmap_inverse(void)
 
          // determine which light ray to follow
          vec3_t ray;
-         int status = LUAtoC_lens_inverse(x,y,ray);
-         if (status == 0) {
+         fisheye_status status = LUAtoC_lens_inverse(x,y,ray);
+         if (status == NO_VALUE_RETURNED) {
             continue;
          }
-         else if (status == -1) {
+         else if (status == NONSENSE_VALUE) {
             return false;
          }
 
@@ -1208,14 +1239,16 @@ static qboolean resume_lensmap_forward(void)
                // compute left point
                if (px == 0) {
                   double u = (px - 0.5) / platesize;
-                  int status = uv_to_screen(*plate_index, u, v, &bot[0], &bot[1]);
-                  if (status == 0) continue; else if (status == -1) return false;
+                  fisheye_status status = uv_to_screen(*plate_index, u, v, &bot[0], &bot[1]);
+                   if (status == NO_VALUE_RETURNED){ continue;}
+                   else if (status == NONSENSE_VALUE){ return false;}
                }
                // compute right point
                double u = (px + 0.5) / platesize;
                int index = 2*(px+1);
-               int status = uv_to_screen(*plate_index, u, v, &bot[index], &bot[index+1]);
-               if (status == 0) continue; else if (status == -1) return false;
+               fisheye_status status = uv_to_screen(*plate_index, u, v, &bot[index], &bot[index+1]);
+                if (status == NO_VALUE_RETURNED) {continue;}
+                else if (status == NONSENSE_VALUE) {return false;}
             }
          }
          else {
@@ -1231,14 +1264,16 @@ static qboolean resume_lensmap_forward(void)
             // compute left point
             if (px == 0) {
                double u = (px - 0.5) / platesize;
-               int status = uv_to_screen(*plate_index, u, v, &top[0], &top[1]);
-               if (status == 0) continue; else if (status == -1) return false;
+               fisheye_status status = uv_to_screen(*plate_index, u, v, &top[0], &top[1]);
+                if (status == NO_VALUE_RETURNED) {continue;}
+                else if (status == NONSENSE_VALUE) {return false;}
             }
             // compute right point
             double u = (px + 0.5) / platesize;
             int index = 2*(px+1);
-            int status = uv_to_screen(*plate_index, u, v, &top[index], &top[index+1]);
-            if (status == 0) continue; else if (status == -1) return false;
+            fisheye_status status = uv_to_screen(*plate_index, u, v, &top[index], &top[index+1]);
+             if (status == NO_VALUE_RETURNED) {continue;}
+             else if (status == NONSENSE_VALUE) {return false;}
          }
 
          // DRAW QUAD FOR EACH PIXEL IN THIS TEXTURE ROW ***********************************
@@ -1283,20 +1318,12 @@ static qboolean resume_lensmap_forward(void)
 //    maps uv coordinate on a texture to a screen coordinate
 static int uv_to_screen(int plate_index, double u, double v, int *lx, int *ly)
 {
-   // get ray from uv coordinates
-   vec3_t ray;
-   plate_uv_to_ray(plate_index, u, v, ray);
+    vec2_u uv = {u,v};
+    point2d screenPoint = uv_to_screen_(arg_consolidator, plate_index, uv);
+    *lx = screenPoint.xy.x;
+    *ly = screenPoint.xy.y;
 
-   // map ray to image coordinates
-   double x,y;
-   int status = LUAtoC_lens_forward(ray,&x,&y);
-   if (status == 0 || status == -1) { return status; }
-
-   // map image to screen coordinates
-   *lx = (int)(x/lens.scale + lens.width_px/2);
-   *ly = (int)(-y/lens.scale + lens.height_px/2);
-
-   return status;
+   return last_status;
 }
 
 // fills a quad on the lensmap using the given plate coordinate
