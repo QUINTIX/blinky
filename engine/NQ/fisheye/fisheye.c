@@ -515,7 +515,6 @@ static qboolean calc_zoom(void)
 // |                                                                              |
 // --------------------------------------------------------------------------------
 
-// copied from WritePNGfile in NQ/screen.c
 // write a plate 
 static void WritePNGplate(char *filename, int plate_index, int with_margins){
    const byte *palette = host_basepal;

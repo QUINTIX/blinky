@@ -300,7 +300,7 @@ static void cmd_saveglobe(void)
    else {
       (*globe).save.with_margins = 0;
    }
-   (*globe).save.should = true;
+   (*globe).save.should = true; //TODO: remove out-of-band signalling
 }
 
 static void cmd_saverubix(void){

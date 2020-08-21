@@ -214,7 +214,7 @@ D_SpriteScanLeftEdge(void)
     do {
 	pvert = &r_spritedesc.pverts[i];
 	pnext = pvert - 1;
-
+	
 	vbottom = ceil(pnext->v);
 
 	if (vtop < vbottom) {
@@ -404,7 +404,9 @@ D_DrawSprite(void)
 	    ymax = pverts->v;
 	    maxindex = i;
 	}
-
+	    //workaround for clipping bug with unknown cause
+	    pverts->u = fabs(pverts->u);
+	    pverts->v = fabs(pverts->v);
 	pverts++;
     }
 
