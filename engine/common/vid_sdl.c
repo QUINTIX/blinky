@@ -231,16 +231,8 @@ VID_SetMode(const qvidmode_t *mode, const byte *palette)
     if (!renderer)
 	Sys_Error("%s: Unable to create renderer: %s", __func__, SDL_GetError());
 
-//    texture = SDL_CreateTexture(renderer,
-//				format->format,
-//				SDL_TEXTUREACCESS_STREAMING,
-//				mode->width, mode->height);
-//    if (!texture)
-//	Sys_Error("%s: Unable to create texture: %s", __func__, SDL_GetError());
-
     VID_SDL_SetIcon();
 
-    //VID_InitGamma(palette);
     VID_SetPalette(palette);
 
     vid.numpages = 1;
@@ -486,8 +478,8 @@ SDL_Palette* makePaddedPalette_(const byte* input, SDL_Palette* palette){
    SDL_Palette* pal_ = !!palette ? palette : SDL_AllocPalette(256);
    byte* curColor = (byte*)input;
    const byte* end = &input[767];
-   for(int i=0;curColor <= end; curColor+=3){
-      palette->colors[i++] = (SDL_Color){
+   for(int i=0; curColor <= end; curColor+=3){
+      pal_->colors[i++] = (SDL_Color){
 	      .r=curColor[0],.g=curColor[1],.b=curColor[2]};
    }
    return pal_;
