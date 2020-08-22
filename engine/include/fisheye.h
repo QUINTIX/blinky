@@ -40,8 +40,6 @@ struct _globe {
    
    // retrieves the _realative index_ of a pixel in the platemap
    #define RELATIVE_GLOBEPIXEL(plate, x, y) ((plate)*(globe.platesize)*(globe.platesize) + (x) + (y)*(globe.platesize))
-   // retrieves a pointer to a pixel in the platemap
-   #define GLOBEPIXEL(plate,x,y) (globe.pixels + RELATIVE_GLOBEPIXEL(plate, x, y))
 
    // globe plates
    #define MAX_PLATES 6

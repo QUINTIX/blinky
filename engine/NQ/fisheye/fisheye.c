@@ -6,7 +6,6 @@
 
 #include "bspfile.h"
 #include "client.h"
-#include "cmd.h"
 #include "console.h"
 #include "cvar.h"
 #include "draw.h"
@@ -186,13 +185,6 @@ void F_Init(void)
    init_lua();
 
    F_init_commands(&zoom, &rubix, lua);
-
-   // defaults
-   Cmd_ExecuteString("fisheye 1", src_command);
-   Cmd_ExecuteString("f_globe cube", src_command);
-   Cmd_ExecuteString("f_lens panini", src_command);
-   Cmd_ExecuteString("f_fov 180", src_command);
-   Cmd_ExecuteString("f_rubixgrid 10 4 1", src_command);
 
    // create palette maps
    create_palmap();
@@ -452,14 +444,12 @@ static qboolean calc_zoom(void)
 
       // try to scale based on FOV using the forward map
       if (lua_refs.lens_forward != -1) {
-         vec3_t ray;
-         double x=1.,y=1.;
          double fovr = zoom.fov * M_PI / 180;
          if (zoom.type == ZOOM_FOV) {
             vec3_u ray_ = latlon_to_ray_((vec2_u){0, fovr*0.5});
-            VectorCopy(ray_.vec, ray);
-            if (LUAtoC_lens_forward(ray,&x,&y)) {
-               lens.scale = x / (lens.width_px * 0.5);
+            vec2_u xy = LUAtoC_lens_forward_(ray_);
+            if (FE_SUCCESS == last_status) {
+                lens.scale = xy.xy.x / (lens.width_px * 0.5);
             }
             else {
                Con_Printf("ray_to_xy did not return a valid r value for determining FOV scale\n");
@@ -467,10 +457,10 @@ static qboolean calc_zoom(void)
             }
          }
          else if (zoom.type == ZOOM_VFOV) {
-            vec3_u ray_ =latlon_to_ray_((vec2_u){fovr*0.5,0});
-            VectorCopy(ray_.vec, ray);
-            if (LUAtoC_lens_forward(ray,&x,&y)) {
-               lens.scale = y / (lens.height_px * 0.5);
+            vec3_u ray_ = latlon_to_ray_((vec2_u){fovr*0.5,0});
+            vec2_u xy = LUAtoC_lens_forward_(ray_);
+            if (FE_SUCCESS == last_status) {
+                lens.scale = xy.xy.y / (lens.height_px * 0.5);
             }
             else {
                Con_Printf("ray_to_xy did not return a valid r value for determining FOV scale\n");
@@ -1145,7 +1135,7 @@ static qboolean ray_to_plate_uv(int plate_index, vec3_t ray, double *u, double *
    double z = DotProduct(globe.plates[plate_index].forward, ray);
 
    // project ray to the texture
-   double dist = 0.5 / tan(globe.plates[plate_index].fov/2);
+   double dist = globe.plates[plate_index].dist;
    *u = x/z*dist + 0.5;
    *v = -y/z*dist + 0.5;
 
@@ -1512,7 +1502,7 @@ static void render_lensmap(void)
 // render a specific plate
 static void render_plate(int plate_index, vec3_t forward, vec3_t right, vec3_t up) 
 {
-   byte *pixels = GLOBEPIXEL(plate_index, 0, 0);
+    byte *pixels = globe.pixels + RELATIVE_GLOBEPIXEL(plate_index, 0, 0);
 
    // set camera orientation
    VectorCopy(forward, r_refdef.forward);
