@@ -1,15 +1,18 @@
-#include <lua.h>
+#include <lua.h> //unwanted dependency
 #include <stdio.h>
 
 #include "cmd.h"
 #include "common.h"
 #include "console.h"
-#include "fisheye.h"
-#include "fishcmd.h"
 #include "host.h"
-#include "imageutil.h"
 #include "vid.h"
 #include "zone.h"
+
+#include "imageutil.h"
+#include "fisheye.h"
+#include "fishScript.h"
+#include "fishcmd.h"
+
 
 // console commands
 static void cmd_fisheye(void);
@@ -43,15 +46,14 @@ qboolean shortcutkeys_enabled;
 
 void F_init_commands(
 	struct _zoom *zoom_,
-        struct _rubix *rubix_,
-	lua_State *lua_
+        struct _rubix *rubix_
 ){
    zoom = zoom_;
    rubix = rubix_;
    lens = F_getLens();
    globe = F_getGlobe();
    
-   lua = lua_;
+   lua = (lua_State*)F_getStateHolder(); // thanks, I hate it
    
    Cmd_AddCommand("fisheye", cmd_fisheye);
    Cmd_AddCommand("f_help", cmd_help);
@@ -214,13 +216,14 @@ static void cmd_lens(void)
    (*lens).changed = true;
 
    // get name
-   strcpy((*lens).name, Cmd_Argv(1));
+   const char* name = Cmd_Argv(1);
+   strncpy((*lens).name, name, sizeof(lens->name));
 
    // Display name
-   Con_Printf("f_lens %s", (*lens).name);
+   Con_Printf("f_lens %s", name);
 
    // load lens
-   (*lens).valid = LUA_load_lens();
+   (*lens).valid = F_load_lens(name, lens, zoom, (*globe).numplates);
    if (!(*lens).valid) {
       strcpy((*lens).name,"");
       Con_Printf("not a valid lens\n");
@@ -300,7 +303,7 @@ static void cmd_saveglobe(void)
    else {
       (*globe).save.with_margins = 0;
    }
-   (*globe).save.should = true; //TODO: remove out-of-band signalling
+   (*globe).save.should = true; //TODO: remove out-of-band signalling that are not "thrown" exceptions
 }
 
 static void cmd_saverubix(void){
@@ -351,13 +354,14 @@ static void cmd_globe(void)
    (*globe).changed = true;
 
    // get name
-   strcpy((*globe).name, Cmd_Argv(1));
+   const char* name = Cmd_Argv(1);
+   strncpy((*globe).name, name, sizeof(globe->name));
 
    // display name
-   Con_Printf("f_globe %s\n", (*globe).name);
+   Con_Printf("f_globe %s\n", name);
 
    // load globe
-   (*globe).valid = LUA_load_globe();
+   (*globe).valid = F_load_globe((*globe).name, globe);
    if (!(*globe).valid) {
       strcpy((*globe).name,"");
       Con_Printf("not a valid globe\n");

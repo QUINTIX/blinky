@@ -12,14 +12,14 @@ void F_Shutdown(void);
 void F_RenderView(void);
 void F_WriteConfig(FILE *f);
 
-qboolean LUA_load_lens(void);
-qboolean LUA_load_globe(void);
-
 typedef enum fe_status {
     NONSENSE_VALUE = -1,
     NO_VALUE_RETURNED = 0,
     FE_SUCCESS = 1
 } fisheye_status;
+
+void fe_throw(fisheye_status status);
+void fe_clear(void);
 
 typedef int (*ray_to_plate_index_t)(vec3_t ray);
 

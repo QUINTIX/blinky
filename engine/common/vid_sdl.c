@@ -296,7 +296,8 @@ int VGA_width, VGA_height, VGA_rowbytes, VGA_bufferrowbytes = 0;
 void
 VID_SetPalette(const byte *palette)
 {
-    if(!!!loColorSurf){return;}
+    if(!!!loColorSurf){
+       return;}
     
     SDL_PixelFormat* format = loColorSurf->format;
     SDL_Palette pal = *makePaddedPalette_(palette, format->palette);

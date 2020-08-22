@@ -18,7 +18,7 @@ qboolean is_lens_builder_time_up_(struct _lens_builder *lens_builder)
 };
 
 
-vec3_u latlon_to_ray_(const vec2_u latlon)
+vec3_u latlon_to_ray(const vec2_u latlon)
 {
    vec_t clat = cos(latlon.latlon.lat);
 
@@ -30,7 +30,7 @@ vec3_u latlon_to_ray_(const vec2_u latlon)
    return ray;
 }
 
-vec2_u ray_to_latlon_(const vec3_u ray)
+vec2_u ray_to_latlon(const vec3_u ray)
 {
    vec_t lengthY = sqrt(
       ray.xyz.x*ray.xyz.x + ray.xyz.z*ray.xyz.z
@@ -43,7 +43,7 @@ vec2_u ray_to_latlon_(const vec3_u ray)
    return latlon;
 }
 
-vec3_u plate_uv_to_ray_(const struct _globe *globe,
+vec3_u plate_uv_to_ray(const struct _globe *globe,
 	int plate_index, const vec2_u uv)
 {	
    // transform to image coordinates
@@ -71,21 +71,30 @@ vec3_u plate_uv_to_ray_(const struct _globe *globe,
    return outRay;
 }
 
+// --------------------------------------------------------------------------------
+// |                                                                              |
+// |                  FORWARD MAP GETTER/SETTER HELPERS                           |
+// |                                                                              |
+// --------------------------------------------------------------------------------
+
+// convenience function for forward map calculation:
+//    maps uv coordinate on a texture to a screen coordinate
+
 // convenience functions for forward map calculation:
 // map lens to screen uv for a given globe plate
-vec2_u lens_to_screen_uv_(lens_forward_t forward,
+vec2_u lens_to_screen_uv(lens_forward_t forward,
       const struct _globe *globe, int plate_index, const vec2_u uv)
 {
-   vec3_u ray = plate_uv_to_ray_(globe, plate_index, uv);
+   vec3_u ray = plate_uv_to_ray(globe, plate_index, uv);
    return forward(ray);
 }
 
 // maps uv coordinate on a texture to a screen coordinate
-point2d uv_to_screen_(const struct state_paq state,
+point2d uv_to_screen(const struct state_paq state,
       int plate_index, const vec2_u uv)
 {
    struct _lens lens = *state.lens;
-   vec2_u out_uv = lens_to_screen_uv_(state.forward, state.globe, plate_index, uv);
+   vec2_u out_uv = lens_to_screen_uv(state.forward, state.globe, plate_index, uv);
    point2d pt = {.k = {
           (int)(out_uv.uv.u/lens.scale + lens.width_px/2),
           (int)(-out_uv.uv.v/lens.scale + lens.height_px/2)
@@ -93,5 +102,3 @@ point2d uv_to_screen_(const struct state_paq state,
 
    return pt;
 }
-
-

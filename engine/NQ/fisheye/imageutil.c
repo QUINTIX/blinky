@@ -31,7 +31,7 @@ static int find_closest_pal_index_(int r, int g, int b, const byte* pal_){
    return minindex;
 }
 
-byte* makePalmapForPlate_(const byte *inPal, byte palleteLookup[256], 
+byte* makePalmapForPlate(const byte *inPal, byte palleteLookup[256], 
        int plateIdx)
 {
    int i;
@@ -112,7 +112,7 @@ void WritePNGplate_(struct _globe* globe, ray_to_plate_index_t ray_to_plate,
     for(int i=0; i < height; i++){
        for(int j=0; j < width; j++){
           const vec2_u uv = {.k = { (float)j/width, ((float)i)/height}};
-          vec3_u ray = plate_uv_to_ray_(globe, plate_index, uv);
+          vec3_u ray = plate_uv_to_ray(globe, plate_index, uv);
           *pix = with_margins || plate_index == ray_to_plate(ray.vec)
                   ? *pix : 0xFE;
           pix++;
@@ -181,7 +181,7 @@ void dumpTints(struct _lens* lens, char *filename){
 void dumpIndicies(struct _lens* lens, char* filename){
    SDL_Surface *surf = SDL_CreateRGBSurfaceWithFormatFrom(lens->pixels,
          lens->width_px, lens->height_px, 32, lens->width_px,
-         SDL_PIXELFORMAT_BGRX8888);
+         SDL_PIXELFORMAT_RGBA8888);
    
    IMG_SavePNG(surf, filename);
    

@@ -2,7 +2,7 @@
 #include "fisheye.h"
 #include <SDL_surface.h>
 
-byte* makePalmapForPlate_(const byte* inPal, byte palleteLookup[256],
+byte* makePalmapForPlate(const byte* inPal, byte palleteLookup[256],
      int plateIdx);
 
 void WritePNGplate_(struct _globe* globe,

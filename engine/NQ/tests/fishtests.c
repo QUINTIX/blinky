@@ -120,7 +120,7 @@ static void test_post_init(void **state){
 
 static void runConsoleSetupScript(double fakeDeltaTime){
 	Host_Frame(fakeDeltaTime);
-	Cbuf_InsertText("f_globe tetra; f_lense stereographic; f_fov 210; show_fps 1");
+	Cbuf_InsertText("f_globe tetra; f_lens stereographic; f_fov 270; show_fps 1; fisheye 1;");
 	Cbuf_Execute();
 	SCR_CenterPrint("Warming up for tests. Do not exit.");
 	Host_Frame(fakeDeltaTime);
@@ -226,7 +226,7 @@ static void test_latlon_to_ray(void **state){
 		.lon = M_PI/4.
 	}};
 	
-	vec3_u actualRay = latlon_to_ray_(onEquator);
+	vec3_u actualRay = latlon_to_ray(onEquator);
 	
 	float halfRoot2 = sqrtf(2)/2;
 	
@@ -239,7 +239,7 @@ static void test_ray_to_latlon(void **state){
 	(void)state;
 	const vec3_u pole = {.vec = {0., -1., 0.} };
 	
-	vec2_u actualLatLon = ray_to_latlon_(pole);
+	vec2_u actualLatLon = ray_to_latlon(pole);
 	
 	assert_float_equal(actualLatLon.latlon.lat, -M_PI/2, EPSILON);
 	assert_float_equal(actualLatLon.latlon.lon, 0., EPSILON);
@@ -259,7 +259,7 @@ static void test_plate_uv_to_ray(void **state){
 	VectorCopy(right.vec, globe.plates[0].right);
 	VectorCopy(up.vec, globe.plates[0].up);
 	
-	vec3_u actualRay = plate_uv_to_ray_(&globe, 0, uv);
+	vec3_u actualRay = plate_uv_to_ray(&globe, 0, uv);
 	
 	vec_t lengthSq = DotProduct(actualRay.vec, actualRay.vec);
 	assert_float_equal(1.0, lengthSq, EPSILON);
@@ -295,7 +295,7 @@ static void test_uv_to_screen(void **state){
 	
 	const vec2_u uv = {.uv = {.u=1.0, .v=1.0}};
 	
-	point2d screenPoint = uv_to_screen_(paq, 0, uv);
+	point2d screenPoint = uv_to_screen(paq, 0, uv);
 	assert_in_range(screenPoint.xy.x, 0, lens.width_px);
 	assert_int_equal(1, mockScriptState);
 	mockScriptState = 0;
@@ -320,7 +320,7 @@ static void test_save_rubix(void **state){
       colorCount[tint]++;
    }
    
-   int maxPixelsPerFace = tintPixelCount/4;
+   int maxPixelsPerFace = tintPixelCount/2;
    int minPixelsPerFace = 0x100;
    
    assert_in_range(colorCount[0], minPixelsPerFace, maxPixelsPerFace);

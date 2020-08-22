@@ -72,14 +72,14 @@ struct _lens_builder * start_lens_builder_clock_(
 
 qboolean is_lens_builder_time_up_(struct _lens_builder *lens_builder);
 
-vec3_u latlon_to_ray_(const vec2_u latlon);
+vec3_u latlon_to_ray(const vec2_u latlon);
 
-vec2_u ray_to_latlon_(const vec3_u ray);
+vec2_u ray_to_latlon(const vec3_u ray);
 
-vec3_u plate_uv_to_ray_(const struct _globe *globe,
+vec3_u plate_uv_to_ray(const struct _globe *globe,
       int plate_index, const vec2_u uv);
 
-point2d uv_to_screen_(const struct state_paq state,
+point2d uv_to_screen(const struct state_paq state,
       int plate_index, const vec2_u uv);
 
 #endif
