@@ -35,10 +35,15 @@ vec2_u __wrap_scriptToC_lens_forward(vec3_u ray){
 }
 
 void __wrap_Con_Printf(const char* fmt, ...){
-	va_list argpointer;
-	va_start(argpointer, fmt);
-	printf(fmt, argpointer);
-	va_end(argpointer);
+	va_list argptr;
+	char msg[MAX_PRINTMSG];
+	static qboolean inupdate;
+
+	va_start(argptr, fmt);
+	vsnprintf(msg, sizeof(msg), fmt, argptr);
+	va_end(argptr);
+
+	printf("%s", msg);
 }
 
 static int setup(void **state);
