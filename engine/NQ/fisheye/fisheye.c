@@ -113,12 +113,19 @@ static void save_globe(void);
 
 //externalize exception throwing
 static fisheye_status last_status;
+
 void fe_throw(fisheye_status status){
     last_status = status;
 };
 void fe_clear(){
     last_status = FE_SUCCESS;
 }
+//might as well literally make it extern at this point. But I hate extern. And I'm stubborn.
+#ifndef __wrap_F_getLastStatus
+fisheye_status F_getLastStatus(){
+	return last_status;
+}
+#endif //temporary until I figure out how to do this externally
 
 // retrieves a pointer to a pixel in the video buffer
 #define VBUFFER(x,y) (vid.buffer + (x) + (y)*vid.rowbytes)
