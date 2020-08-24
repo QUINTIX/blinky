@@ -21,6 +21,8 @@ typedef enum fe_status {
 void fe_throw(fisheye_status status);
 void fe_clear(void);
 
+fisheye_status F_getLastStatus(void); // TODO: kill kill kill
+
 typedef int (*ray_to_plate_index_t)(vec3_t ray);
 
 struct _globe {
