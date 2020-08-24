@@ -6,7 +6,7 @@
 #include "fishzoom.h"
 #include "console.h"
 
-qboolean calc_zoom_(struct _lens *lens, struct _zoom *zoom)
+qboolean calc_zoom(struct _lens *lens, struct _zoom *zoom)
 {
    // clear lens scale
    (*lens).scale = -1;
@@ -32,7 +32,7 @@ qboolean calc_zoom_(struct _lens *lens, struct _zoom *zoom)
       if (lua_refs.lens_forward != -1) {
          double fovr = (*zoom).fov * M_PI / 180;
          if ((*zoom).type == ZOOM_FOV) {
-            vec3_u ray_ = latlon_to_ray((vec2_u){0, fovr*0.5});
+            vec3_u ray_ = latlon_to_ray((vec2_u){{0, fovr*0.5}});
             vec2_u xy = scriptToC_lens_forward(ray_);
             if (FE_SUCCESS == F_getLastStatus()) {
                 (*lens).scale = xy.xy.x / ((*lens).width_px * 0.5);
@@ -43,7 +43,7 @@ qboolean calc_zoom_(struct _lens *lens, struct _zoom *zoom)
             }
          }
          else if ((*zoom).type == ZOOM_VFOV) {
-            vec3_u ray_ = latlon_to_ray((vec2_u){fovr*0.5,0});
+            vec3_u ray_ = latlon_to_ray((vec2_u){{fovr*0.5,0}});
             vec2_u xy = scriptToC_lens_forward(ray_);
             if (FE_SUCCESS == F_getLastStatus()) {
                 (*lens).scale = xy.xy.y / ((*lens).height_px * 0.5);

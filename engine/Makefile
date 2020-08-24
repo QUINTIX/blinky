@@ -666,6 +666,7 @@ CL_OBJS := \
 	fisheye/fishlens.o	\
 	fisheye/imageutil.o 	\
 	fisheye/fishLua.o	\
+	fisheye/fishzoom.o 	\
 	fisheye/fisheye.o	\
 	keys.o		\
 	menu.o		\

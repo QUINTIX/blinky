@@ -113,7 +113,7 @@ static void test_zoom_FOV(void **state){
 	will_return_always(__wrap_F_getLastStatus, FE_SUCCESS);
 	will_return_always(__wrap_scriptToC_lens_forward, &mocked_Script_return);
 
-	qboolean result = calc_zoom_(&lens, &zoom);
+	qboolean result = calc_zoom(&lens, &zoom);
 	assert_true(result);
 	assert_float_equal(mocked_Script_return.xy.x/(lens.width_px * 0.5), lens.scale, FLT_EPSILON);
 }
@@ -132,7 +132,7 @@ static void test_zoom_VFOV(void **state){
 	will_return_always(__wrap_F_getLastStatus, FE_SUCCESS);
 	will_return_always(__wrap_scriptToC_lens_forward, &mocked_Script_return);
 
-	qboolean result = calc_zoom_(&lens, &zoom);
+	qboolean result = calc_zoom(&lens, &zoom);
 	assert_true(result);
 	assert_float_equal(mocked_Script_return.xy.y/(lens.width_px * 0.5), lens.scale, FLT_EPSILON);
 }
@@ -167,7 +167,7 @@ static qboolean test_zoom_contain(vec2_u widthHeight){
 
 	will_return_always(__wrap_F_getScriptRef, &mock_refs);
 
-	return  calc_zoom_(&lens, &zoom);
+	return  calc_zoom(&lens, &zoom);
 }
 
 static void test_zoom_COVER(void **state){
@@ -189,7 +189,7 @@ static void test_zoom_COVER(void **state){
 
 	will_return_always(__wrap_F_getScriptRef, &mock_refs);
 
-	qboolean result = calc_zoom_(&lens, &zoom);
+	qboolean result = calc_zoom(&lens, &zoom);
 	assert_true(result);
 }
 
@@ -204,7 +204,7 @@ static void test_zoom_NO_MAX_FOV(void **state){
 		.type = ZOOM_FOV
 	};
 	
-	qboolean result = calc_zoom_(&lens, &zoom);
+	qboolean result = calc_zoom(&lens, &zoom);
 	
 	assert_false(result);
 }
@@ -221,7 +221,7 @@ static void test_zoom_NO_MAX_VFOV(void **state){
 		.type = ZOOM_VFOV
 	};
 	
-	qboolean result = calc_zoom_(&lens, &zoom);
+	qboolean result = calc_zoom(&lens, &zoom);
 	assert_false(result);
 }
 
@@ -237,7 +237,7 @@ static void test_zoom_NO_MAX_VFOVorFOV(void **state){
 		.type = ZOOM_VFOV
 	};
 	
-	qboolean result = calc_zoom_(&lens, &zoom);
+	qboolean result = calc_zoom(&lens, &zoom);
 	assert_false(result);
 }
 
@@ -257,7 +257,7 @@ static void test_zoom_x_toobig(int zoomtype){
 		.type = zoomtype
 	};
 
-	qboolean result = calc_zoom_(&lens, &zoom);
+	qboolean result = calc_zoom(&lens, &zoom);
 	assert_false(result);
 }
 
@@ -279,7 +279,7 @@ static void test_zoom_x_invalid(int zoomtype){
 	will_return_always(__wrap_scriptToC_lens_forward, &mocked_Script_return);
 	will_return_always(__wrap_F_getLastStatus, NO_VALUE_RETURNED);
 
-	qboolean result = calc_zoom_(&lens, &zoom);
+	qboolean result = calc_zoom(&lens, &zoom);
 	assert_false(result);
 }
 
@@ -300,7 +300,7 @@ static void test_zoom_no_forward(void **state){
 	};
 	will_return_always(__wrap_F_getScriptRef, &refs_noForward);
 
-	qboolean result = calc_zoom_(&lens, &zoom);
+	qboolean result = calc_zoom(&lens, &zoom);
 	assert_false(result);
 }
 
@@ -317,7 +317,7 @@ static void test_zoom_scale_negative(void **state){
 	will_return_always(__wrap_F_getLastStatus, FE_SUCCESS);
 	will_return_always(__wrap_scriptToC_lens_forward, &willZoomNegative);
 
-	qboolean result = calc_zoom_(&lens, &zoom);
+	qboolean result = calc_zoom(&lens, &zoom);
 	assert_false(result);
 }
 
