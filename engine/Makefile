@@ -309,7 +309,7 @@ QWSVDIR	= $(BUILD_DIR)/qwsv
 
 APPS =	tyr-quake$(EXT) tyr-glquake$(EXT) \
 	tyr-qwcl$(EXT) tyr-glqwcl$(EXT) \
-	tyr-qwsv$(EXT)
+	tyr-qwsv$(EXT) blink-inttest$(EXT)
 
 default:	all
 
@@ -546,6 +546,17 @@ $(1)/%.o:	QW/server/%.c	; $$(do_cc_o_c)
 $(1)/%.o:	QW/common/%.c	; $$(do_cc_o_c)
 $(1)/%.o:	common/%.c	; $$(do_cc_o_c)
 endef
+define INTTEST_RULES
+$(1)/%.o:	CPPFLAGS = $(2)
+$(1)/%.o:	CFLAGS += $(3)
+$(1)/%.o:	common/%.S	; $$(do_cc_o_c)
+$(1)/%.o:	NQ/%.S		; $$(do_cc_o_c)
+$(1)/%.o:	common/%.c	; $$(do_cc_o_c)
+$(1)/%.o:	NQ/%.c		; $$(do_cc_o_c)
+$(1)/%.o:	NQ/fisheye/%.c	; $$(do_cc_o_c)
+$(1)/%.o:	NQ/tests/%.c	; $$(do_cc_o_c)
+$(1)/%.o:	test/%.c	; $$(do_cc_o_c)
+endef
 
 # Another level of indirection
 # Generate five sets of rules for the five target build directories
@@ -771,6 +782,32 @@ QWSV_OBJS := \
 	sv_send.o	\
 	world.o
 
+INTTEST_OBJS :=  \
+	net_udp.o	\
+	buildinfo.o	\
+	cmd.o		\
+	common.o	\
+	crc.o		\
+	cvar.o		\
+	mathlib.o	\
+	model.o		\
+	rb_tree.o	\
+	shell.o		\
+	zone.o		\
+	../test/sys_t_unix.o \
+	tests/fish_mathTests.o \
+	tests/fishtests.o
+
+# DEPTEST_OBJS := \ 
+#	fishlens.o \
+#	mathlib.o \
+#	fishzoom.o \
+#	tests/fish_dependentTests.o
+
+# RDRTEST_OBJS := \
+#	quake_swrTest.o
+
+
 # ----------------------------------------------------------------------------
 # Start off the CPPFLAGS, config independent stuff
 # ----------------------------------------------------------------------------
@@ -790,11 +827,14 @@ endif
 
 # Includes
 COMMON_CPPFLAGS += -iquote $(TOPDIR)/include
+COMMON_CPPFLAGS += -iquote $(TOPDIR)/NQ/fisheye
 COMMON_CPPFLAGS += $(if $(LOCALBASE),-idirafter $(LOCALBASE)/include,)
 COMMON_LFLAGS   += $(if $(LOCALBASE),$(call libdir-check,$(LOCALBASE)/lib,),)
 NQCL_CPPFLAGS   += -iquote $(TOPDIR)/NQ
 QW_CPPFLAGS     += -iquote $(TOPDIR)/QW/client
 QWSV_CPPFLAGS   += -iquote $(TOPDIR)/QW/server
+# INTTEST_CPPFLAGS +=	-iquote $(TOPDIR)/NQ/fisheye
+
 
 # If we are on OSX (Darwin) and this is not the GLX target, we will link with
 # "-framework OpenGL" instead. Otherwise, link with libGL as normal
@@ -990,37 +1030,45 @@ nqsw-list = $(COMMON_$(1)) $(CL_$(1)) $(SV_$(1)) $(NQCL_$(1)) $(SW_$(1)) $(NQSW_
 nqgl-list = $(COMMON_$(1)) $(CL_$(1)) $(SV_$(1)) $(NQCL_$(1)) $(GL_$(1)) $(NQGL_$(1))
 qwsw-list = $(COMMON_$(1)) $(CL_$(1)) $(QW_$(1)) $(QWCL_$(1)) $(SW_$(1)) $(QWSW_$(1))
 qwgl-list = $(COMMON_$(1)) $(CL_$(1)) $(QW_$(1)) $(QWCL_$(1)) $(GL_$(1)) $(QWGL_$(1))
-qwsv-list = $(COMMON_$(1)) $(SV_$(1)) $(QW_$(1)) $(QWSV_$(1))
+qwsv-list = $(COMMON_$(1)) $(SV_$(1)) $(QW_$(1)) $(QWSV_$(1)) 
+inttest-list = $(INTTEST_$(1)) $(CL_$(1)) $(SV_$(1)) $(NQCL_$(1)) $(SW_$(1)) $(NQSW_$(1))
 
 ALL_NQSW_CPPFLAGS := $(call nqsw-list,CPPFLAGS)
 ALL_NQGL_CPPFLAGS := $(call nqgl-list,CPPFLAGS)
 ALL_QWSW_CPPFLAGS := $(call qwsw-list,CPPFLAGS)
 ALL_QWGL_CPPFLAGS := $(call qwgl-list,CPPFLAGS)
 ALL_QWSV_CPPFLAGS := $(call qwsv-list,CPPFLAGS)
+ALL_INTTEST_CPPFLAGS := $(call inttest-list,CPPFLAGS) # -fprofile-arcs -ftest-coverage
+
 
 ALL_NQSW_OBJS := $(sort $(call nqsw-list,OBJS))
 ALL_NQGL_OBJS := $(sort $(call nqgl-list,OBJS))
 ALL_QWSW_OBJS := $(sort $(call qwsw-list,OBJS))
 ALL_QWGL_OBJS := $(sort $(call qwgl-list,OBJS))
 ALL_QWSV_OBJS := $(sort $(call qwsv-list,OBJS))
+ALL_INTTEST_OBJS := $(sort $(call inttest-list,OBJS))
 
 ALL_NQSW_LIBS := $(call filter-dups,$(call nqsw-list,LIBS))
 ALL_NQGL_LIBS := $(call filter-dups,$(call nqgl-list,LIBS))
 ALL_QWSW_LIBS := $(call filter-dups,$(call qwsw-list,LIBS))
 ALL_QWGL_LIBS := $(call filter-dups,$(call qwgl-list,LIBS))
 ALL_QWSV_LIBS := $(call filter-dups,$(call qwsv-list,LIBS))
+ALL_INTTEST_LIBS := $(call filter-dups,$(call inttest-list,LIBS))
 
 ALL_NQSW_LFLAGS := $(call nqsw-list,LFLAGS)
 ALL_NQGL_LFLAGS := $(call nqgl-list,LFLAGS)
 ALL_QWSW_LFLAGS := $(call qwsw-list,LFLAGS)
 ALL_QWGL_LFLAGS := $(call qwgl-list,LFLAGS)
 ALL_QWSV_LFLAGS := $(call qwsv-list,LFLAGS)
+ALL_INTTEST_LFLAGS := $(call inttest-list, LFLAGS)
 
 ALL_NQSW_LFLAGS += $(patsubst %,-l%,$(ALL_NQSW_LIBS))
 ALL_NQGL_LFLAGS += $(patsubst %,-l%,$(ALL_NQGL_LIBS))
 ALL_QWSW_LFLAGS += $(patsubst %,-l%,$(ALL_QWSW_LIBS))
 ALL_QWGL_LFLAGS += $(patsubst %,-l%,$(ALL_QWGL_LIBS))
 ALL_QWSV_LFLAGS += $(patsubst %,-l%,$(ALL_QWSV_LIBS))
+ALL_INTTEST_LFLAGS += $(patsubst %,-l%,$(ALL_NQSW_LIBS))
+ALL_INTTEST_LFLAGS += -lcmocka -lsdl2 -lSDL2_image
 
 # ============================================================================
 # Build Rules
@@ -1044,6 +1092,10 @@ $(BIN_DIR)/tyr-glqwcl$(EXT):	$(patsubst %,$(QWGLDIR)/%,$(ALL_QWGL_OBJS))
 
 $(BIN_DIR)/tyr-qwsv$(EXT):	$(patsubst %,$(QWSVDIR)/%,$(ALL_QWSV_OBJS))
 	$(call do_cc_link,$(ALL_QWSV_LFLAGS))
+	$(call do_strip,$@)
+
+$(BIN_DIR)/blink-inttest$(EXT):	$(patsubst %, $(NQSWDIR)/%, $(ALL_INTTEST_OBJS))
+	$(call do_cc_link,$(ALL_INTTEST_LFLAGS))
 	$(call do_strip,$@)
 
 # Build man pages, text and html docs from source
