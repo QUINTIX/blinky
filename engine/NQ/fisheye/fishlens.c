@@ -77,9 +77,6 @@ vec3_u plate_uv_to_ray(const struct _globe *globe,
 // |                                                                              |
 // --------------------------------------------------------------------------------
 
-// convenience function for forward map calculation:
-//    maps uv coordinate on a texture to a screen coordinate
-
 // convenience functions for forward map calculation:
 // map lens to screen uv for a given globe plate
 vec2_u lens_to_screen_uv(lens_forward_t forward,
@@ -89,7 +86,8 @@ vec2_u lens_to_screen_uv(lens_forward_t forward,
    return forward(ray);
 }
 
-// maps uv coordinate on a texture to a screen coordinate
+// convenience function for forward map calculation:
+//    maps uv coordinate on a texture to a screen coordinate
 point2d uv_to_screen(const struct state_paq state,
       int plate_index, const vec2_u uv)
 {
