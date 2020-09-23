@@ -15,7 +15,7 @@ DIST_DIR         ?= dist
 DEBUG            ?= N# Compile with debug info
 OPTIMIZED_CFLAGS ?= Y# Enable compiler optimisations (if DEBUG != Y)
 USE_X86_ASM      ?= $(I386_GUESS)
-USE_SDL          ?= N# New (experimental) SDL video/sound/input targets
+USE_SDL          ?= Y# New (experimental) SDL video/sound/input targets
 LOCALBASE        ?= /usr/local
 QBASEDIR         ?= .# Default basedir for quake data files (Linux/BSD only)
 TARGET_OS        ?= $(HOST_OS)
@@ -69,6 +69,9 @@ TOPDIR := $(shell pwd)
 ifneq (,$(findstring MINGW32,$(SYSNAME)))
 HOST_OS = WIN32
 else
+ifneq (,$(findstring MINGW64,$(SYSNAME)))
+HOST_OS = WIN64
+else
 ifneq (,$(findstring $(SYSNAME),FreeBSD NetBSD))
 HOST_OS = UNIX
 HOST_UNIX = bsd
@@ -86,6 +89,7 @@ HOST_OS = UNIX
 HOST_UNIX = linux
 else
 $(error OS type not detected.)
+endif
 endif
 endif
 endif
