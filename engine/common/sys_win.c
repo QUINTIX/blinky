@@ -35,6 +35,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifdef NQ_HACK
 #include "conproc.h"
 #include "host.h"
+#include "vid.h"
 #endif
 
 #ifndef SERVERONLY
@@ -583,7 +584,7 @@ Sys_SendKeyEvents(void)
      * start a new game?" screen. Other platforms (X) have defined
      * Sys_SendKeyEvents in their vid_* files instead.
      */
-    IN_ProcessEvents();
+    VID_ProcessEvents();
 }
 
 /*
