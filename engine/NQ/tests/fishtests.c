@@ -31,7 +31,6 @@ const char* BIGIFY = "vid_width 1024; vid_height 640; vid_restart;";
 const static double TIME_TO_GIB = 6.25;
 const static double HALF_A_SEC = 0.5;
 double FAKE_DELTA_TIME = 0.1;
-const static vec_t EPSILON = 1./(0x40000);
 
 struct MyState {
 	const char *testString;
@@ -122,7 +121,7 @@ static void test_post_init(void **state){
 
 static void runConsoleSetupScript(double fakeDeltaTime){
 	Host_Frame(fakeDeltaTime);
-	Cbuf_InsertText("f_globe tetra; f_lens stereographic; f_fov 270; show_fps 1; fisheye 1;");
+	Cbuf_InsertText("f_globe tetra; f_lens stereographic; f_fov 270; show_fps 1; fisheye 1; f_rubix 0;");
 	Cbuf_Execute();
 	SCR_CenterPrint("Warming up for tests. Do not exit.");
 	Host_Frame(fakeDeltaTime);

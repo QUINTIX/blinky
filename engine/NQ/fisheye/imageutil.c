@@ -178,12 +178,64 @@ void dumpTints(struct _lens* lens, char *filename){
    SDL_FreeSurface(surf);
 }
 
-void dumpIndicies(struct _lens* lens, char* filename){
-   SDL_Surface *surf = SDL_CreateRGBSurfaceWithFormatFrom(lens->pixels,
-         lens->width_px, lens->height_px, 32, lens->width_px,
-         SDL_PIXELFORMAT_RGBA8888);
+//this makes assumptions about the arrangement of globe->pixels that will not remain valid
+static uint32_t convertGlobePixelIndexToColor(
+		const uint32_t globePixelIndex,
+		const uint32_t width,
+		const uint32_t area,
+		const uint8_t mask,
+		const SDL_PixelFormat* thanksIHateIt){
+	float scale = (float) (UINT8_MAX) / (float)width;
+	
+	uint8_t plateNum = (uint8_t)(globePixelIndex / area);
+	uint32_t platePixelIdx = globePixelIndex % area;
+	uint32_t platePixelY = platePixelIdx/width;
+	uint32_t platePixelX = platePixelIdx % width;
+	
+	uint8_t alpha = mask == 255 ? INT8_MAX : UINT8_MAX;
+	
+	uint32_t colorRaw = SDL_MapRGBA(thanksIHateIt,
+					(uint8_t)(scale*platePixelX),
+					(uint8_t)(scale*platePixelY),
+					plateNum * 42, alpha);
+	return colorRaw;
+}
+
+static SDL_Surface* genSurfaceFromLensIndicies(struct _lens* lens){
+	SDL_Surface* surf = SDL_CreateRGBSurfaceWithFormat(0,
+		lens->width_px, lens->height_px, 32, SDL_PIXELFORMAT_RGBA8888);
+	
+	int screenArea = lens->width_px * lens->height_px;
+	uint32_t globePlateWidth = lens->width_px < lens->height_px ?
+		lens->width_px : lens->height_px;
+	
+	uint32_t area = globePlateWidth*globePlateWidth;
+	
+	SDL_LockSurface(surf);
+	uint32_t* lensPixels = lens->pixels;
+	uint32_t* surfPixels = surf->pixels;
+	uint8_t* tintPixels = lens->pixel_tints;
+
+	for(int i=0; i < screenArea; i++){
+		surfPixels[i] = convertGlobePixelIndexToColor(
+			lensPixels[i], globePlateWidth, area, tintPixels[i],
+			surf->format
+		);
+	}
+	
+	SDL_UnlockSurface(surf);
+	return surf;
+}
+
+void dumpIndicies(struct _lens* lens, const char* filename){
+   SDL_Surface *surf = genSurfaceFromLensIndicies(lens);
    
    IMG_SavePNG(surf, filename);
    
    SDL_FreeSurface(surf);
+}
+
+void dumpIndiciesRaw(struct _lens* lens, const char* filename){
+	size_t filesize = lens->width_px * lens->height_px * sizeof(*(lens->pixels));
+	COM_WriteFile(filename, lens->pixels, (int)filesize);
 }

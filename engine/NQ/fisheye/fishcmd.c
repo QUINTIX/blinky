@@ -333,13 +333,16 @@ static void cmd_savelens(void){
    char filetitle[32];
    strncpy(filetitle, Cmd_Argv(1), 32);
    filetitle[31] = 0;
-   
+      
+   char filenameBin[37];
+   snprintf(filenameBin, 37, "%s.bin", filetitle);
+   dumpIndiciesRaw(lens, filenameBin);
+	
    char filename[37];
    snprintf(filename, 37, "%s.png", filetitle);
-   
    dumpIndicies(lens, filename);
-   
-   Con_Printf("lens indicies saved to %s\n", filename);
+
+   Con_Printf("lens indicies saved to %s and %s\n", filename, filenameBin);
 }
 
 static void cmd_globe(void)

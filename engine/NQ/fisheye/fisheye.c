@@ -103,7 +103,11 @@ static void create_lensmap(void);
 
 // renderers
 static void render_lensmap(void);
+static void render_lensmap_8bit(void);
+static void render_lensmap_8bit_rubix(void);
+
 static void render_plate(int plate_index, vec3_t forward, vec3_t right, vec3_t up);
+
 
 // globe saver functions
 static void WritePNGplate(char *filename, int plate_index, int with_margins);
@@ -127,6 +131,7 @@ fisheye_status F_getLastStatus(){
 
 // retrieves a pointer to a pixel in the video buffer
 #define VBUFFER(x,y) (vid.buffer + (x) + (y)*vid.rowbytes)
+#define VBUFFER_(start, stride, x, y) (start + x + y*stride)
 
 // -------------------------------------------------------------------------------- 
 // |                                                                              |
@@ -797,25 +802,47 @@ static void create_lensmap(void)
 // draw the lensmap to the vidbuffer
 static void render_lensmap(void)
 {
+   if(NULL != lens.pixels){
+      if (rubix.enabled) {
+         render_lensmap_8bit();
+      } else {
+         render_lensmap_8bit_rubix();
+      }
+   }
+}
+
+static void render_lensmap_8bit(void){
+   int x,y;
+   
    uint32_t *lmap = lens.pixels;
    byte *pmap = lens.pixel_tints;
-   int x, y;
-   for(y=0; y<lens.height_px; y++)
-      for(x=0; x<lens.width_px; x++,lmap++,pmap++)
-         if (*lmap) {
-            int lx = x+scr_vrect.x;
-            int ly = y+scr_vrect.y;
-            byte* pixAddr = globe.pixels + *lmap;
-            if (rubix.enabled) {
-               int i = *pmap;
-              
-               *VBUFFER(lx,ly) = i != 255 ? globe.plates[i].palette[*pixAddr] : *pixAddr;
-            }
-            else {
-               *VBUFFER(lx,ly) = *pixAddr;
-            }
-         }
+   for(y=0; y<lens.height_px; y++){
+      for(x=0; x<lens.width_px; x++,lmap++,pmap++){
+         int lx = x+scr_vrect.x;
+         int ly = y+scr_vrect.y;
+         byte* pixAddr = globe.pixels + *lmap;
+         *VBUFFER(lx,ly) = *pixAddr;
+      }
+   }
 }
+
+static void render_lensmap_8bit_rubix(void){
+   int x,y;
+   
+   uint32_t *lmap = lens.pixels;
+   byte *pmap = lens.pixel_tints;
+   for(y=0; y<lens.height_px; y++){
+      for(x=0; x<lens.width_px; x++,lmap++,pmap++){
+         int lx = x+scr_vrect.x;
+         int ly = y+scr_vrect.y;
+         byte* pixAddr = globe.pixels + *lmap;
+         int i = *pmap;
+         *VBUFFER(lx,ly) = i != 255 ? globe.plates[i].palette[*pixAddr] : *pixAddr;
+      }
+   }
+}
+
+
 
 // render a specific plate
 static void render_plate(int plate_index, vec3_t forward, vec3_t right, vec3_t up) 

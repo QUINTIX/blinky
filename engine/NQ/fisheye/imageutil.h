@@ -15,4 +15,6 @@ SDL_Palette* makePaddedPalette(byte* input);
 
 void dumpTints(struct _lens* lens, char *filename);
 
-void dumpIndicies(struct _lens* lens, char* filename);
+void dumpIndicies(struct _lens* lens, const char* filename);
+
+void dumpIndiciesRaw(struct _lens* lens, const char* filename);
