@@ -63,7 +63,6 @@ qboolean DDActive = false;
 static SDL_Renderer *renderer = NULL;
 static SDL_Texture *texture = NULL;
 static SDL_PixelFormat *sdl_format = NULL;
-static SDL_Surface* loColorSurf = NULL;
 
 /* ------------------------------------------------------------------------- */
 
@@ -93,8 +92,6 @@ VID_GetDesktopRect(vrect_t *rect)
 
 void VID_Shutdown(void)
 {
-    if (loColorSurf)
-	SDL_FreeSurface(loColorSurf);
     if (renderer)
 	SDL_DestroyRenderer(renderer);
     if (sdl_window)
@@ -231,8 +228,16 @@ VID_SetMode(const qvidmode_t *mode, const byte *palette)
     if (!renderer)
 	Sys_Error("%s: Unable to create renderer: %s", __func__, SDL_GetError());
 
+    texture = SDL_CreateTexture(renderer,
+				format->format,
+				SDL_TEXTUREACCESS_STREAMING,
+				mode->width, mode->height);
+    if (!texture)
+	Sys_Error("%s: Unable to create texture: %s", __func__, SDL_GetError());
+
     VID_SDL_SetIcon();
 
+    //VID_InitGamma(palette);
     VID_SetPalette(palette);
 
     vid.numpages = 1;
@@ -250,16 +255,6 @@ VID_SetMode(const qvidmode_t *mode, const byte *palette)
     // In-memory buffer which we upload via SDL texture
     vid.buffer = vid.conbuffer = vid.direct = Hunk_HighAllocName(vid.width * vid.height, "vidbuf");
     vid.rowbytes = vid.conrowbytes = vid.width;
-    
-    if(!!loColorSurf){
-        SDL_FreeSurface(loColorSurf);
-    }
-    loColorSurf = SDL_CreateRGBSurfaceWithFormatFrom
-	(vid.buffer, mode->width, mode->height, 8, mode->width, SDL_PIXELFORMAT_INDEX8);
-    
-    texture = SDL_CreateTextureFromSurface(renderer, loColorSurf);
-    if (!texture)
-    Sys_Error("%s: Unable to create texture: %s", __func__, SDL_GetError());
 
     D_InitCaches(vid_surfcache, vid_surfcachesize);
 
@@ -296,13 +291,32 @@ int VGA_width, VGA_height, VGA_rowbytes, VGA_bufferrowbytes = 0;
 void
 VID_SetPalette(const byte *palette)
 {
-    if(!!!loColorSurf){
-       return;}
-    
-    SDL_PixelFormat* format = loColorSurf->format;
-    SDL_Palette pal = *makePaddedPalette_(palette, format->palette);
-    memcpy(d_8to24table, pal.colors, sizeof(d_8to24table));
-    
+    unsigned i, r, g, b;
+
+    switch (SDL_PIXELTYPE(sdl_format->format)) {
+    case SDL_PIXELTYPE_PACKED32:
+	for (i = 0; i < 256; i++) {
+	    r = palette[0];
+	    g = palette[1];
+	    b = palette[2];
+	    palette += 3;
+	    d_8to24table[i] = SDL_MapRGB(sdl_format, r, g, b);
+	}
+	break;
+    case SDL_PIXELTYPE_PACKED16:
+	for (i = 0; i < 256; i++) {
+	    r = palette[0];
+	    g = palette[1];
+	    b = palette[2];
+	    palette += 3;
+	    d_8to16table[i] = SDL_MapRGB(sdl_format, r, g, b);
+	}
+	break;
+    default:
+	Sys_Error("%s: unsupported pixel format (%s)", __func__,
+		  SDL_GetPixelFormatName(sdl_format->format));
+    }
+
     palette_changed = true;
 }
 
@@ -377,37 +391,69 @@ VID_Init(const byte *palette)
 void
 VID_Update(vrect_t *rects)
 {
-    SDL_Rect subrect = {vid.width,vid.height,0,0}; //inverted rect, so largest rect "wins"
+    SDL_Rect subrect;
+    int i;
     vrect_t *rect;
     vrect_t fullrect;
+    byte *src;
+    void *dst;
+    Uint32 *dst32;
+    Uint16 *dst16;
+    int pitch;
+    int height;
     int err;
 
     /*
      * If the palette changed, refresh the whole screen
      */
     if (palette_changed) {
-        palette_changed = false;
-        fullrect.x = 0;
-        fullrect.y = 0;
-        fullrect.width = vid.width;
-        fullrect.height = vid.height;
-        fullrect.pnext = NULL;
-        rects = &fullrect;
+	palette_changed = false;
+	fullrect.x = 0;
+	fullrect.y = 0;
+	fullrect.width = vid.width;
+	fullrect.height = vid.height;
+	fullrect.pnext = NULL;
+	rects = &fullrect;
     }
-    
-    //I'm *guessing* this was the intended logic, but I still wonder what the point is
+
     for (rect = rects; rect; rect = rect->pnext) {
-        subrect.x = subrect.x < rect->x ? subrect.x : rect->x;
-        subrect.y = subrect.y < rect->y ? subrect.y : rect->y;
-        subrect.w = subrect.w > rect->width ? subrect.w : rect->width;
-        subrect.h = subrect.h > rect->height ? subrect.h : rect->height;
+	subrect.x = rect->x;
+	subrect.y = rect->y;
+	subrect.w = rect->width;
+	subrect.h = rect->height;
+
+	err = SDL_LockTexture(texture, &subrect, (void **)&dst, &pitch);
+	if (err)
+	    Sys_Error("%s: unable to lock texture (%s)",
+		      __func__, SDL_GetError());
+	src = vid.buffer + rect->y * vid.width + rect->x;
+	height = subrect.h;
+	switch (SDL_PIXELTYPE(sdl_format->format)) {
+	case SDL_PIXELTYPE_PACKED32:
+	    dst32 = dst;
+	    while (height--) {
+		for (i = 0; i < rect->width; i++)
+		    dst32[i] = d_8to24table[src[i]];
+		dst32 += pitch / sizeof(*dst32);
+		src += vid.width;
+	    }
+	    break;
+	case SDL_PIXELTYPE_PACKED16:
+	    dst16 = dst;
+	    while (height--) {
+		for (i = 0; i < rect->width; i++)
+		    dst16[i] = d_8to16table[src[i]];
+		dst16 += pitch / sizeof(*dst16);
+		src += vid.width;
+	    }
+	    break;
+	default:
+	    Sys_Error("%s: unsupported pixel format (%s)", __func__,
+		      SDL_GetPixelFormatName(sdl_format->format));
+	}
+	SDL_UnlockTexture(texture);
     }
-
-    SDL_DestroyTexture(texture);
-    texture = SDL_CreateTextureFromSurface(renderer, loColorSurf);
-    
-    err = SDL_RenderCopy(renderer, texture, &subrect, &subrect);
-
+    err = SDL_RenderCopy(renderer, texture, NULL, NULL);
     if (err)
 	Sys_Error("%s: unable to render texture (%s)", __func__, SDL_GetError());
     SDL_RenderPresent(renderer);
@@ -416,6 +462,10 @@ VID_Update(vrect_t *rects)
 void
 D_BeginDirectRect(int x, int y, const byte *pbitmap, int width, int height)
 {
+    int err, i;
+    const byte *src;
+    unsigned *dst;
+    int pitch;
     SDL_Rect subrect;
 
     if (!texture || !renderer)
@@ -425,23 +475,32 @@ D_BeginDirectRect(int x, int y, const byte *pbitmap, int width, int height)
     subrect.y = y;
     subrect.w = width;
     subrect.h = height;
-    
-    SDL_Surface *surf = SDL_CreateRGBSurfaceWithFormatFrom((void*)pbitmap,
-                        width, height, 8, width, SDL_PIXELFORMAT_INDEX8);
-    SDL_SetSurfacePalette(surf, loColorSurf->format->palette);
-    SDL_Texture *tex = SDL_CreateTextureFromSurface(renderer, surf);
 
-    int err = SDL_RenderCopy(renderer, tex, NULL, &subrect);
+    err = SDL_LockTexture(texture, &subrect, (void **)&dst, &pitch);
+    if (err)
+	Sys_Error("%s: unable to lock texture (%s)", __func__, SDL_GetError());
+    src = pbitmap;
+    while (height--) {
+	for (i = 0; i < width; i++)
+	    dst[i] = d_8to24table[src[i]];
+	dst += pitch / sizeof(*dst);
+	src += width;
+    }
+    SDL_UnlockTexture(texture);
+
+    err = SDL_RenderCopy(renderer, texture, NULL, NULL);
     if (err)
 	Sys_Error("%s: unable to render texture (%s)", __func__, SDL_GetError());
     SDL_RenderPresent(renderer);
-    SDL_FreeSurface(surf);
-    SDL_DestroyTexture(tex);
 }
 
 void
 D_EndDirectRect(int x, int y, int width, int height)
 {
+    int err, i;
+    byte *src;
+    unsigned *dst;
+    int pitch;
     SDL_Rect subrect;
 
     if (!texture || !renderer)
@@ -451,18 +510,23 @@ D_EndDirectRect(int x, int y, int width, int height)
     subrect.y = y;
     subrect.w = width;
     subrect.h = height;
-    
-    SDL_Surface *surf = SDL_CreateRGBSurfaceWithFormatFrom(vid.buffer, vid.width,
-                    vid.height, 8, vid.width, SDL_PIXELFORMAT_INDEX8);
-    SDL_SetSurfacePalette(surf, loColorSurf->format->palette);
-    SDL_Texture *tex = SDL_CreateTextureFromSurface(renderer, surf);
 
-    int err = SDL_RenderCopy(renderer, tex, &subrect, &subrect);
+    err = SDL_LockTexture(texture, &subrect, (void **)&dst, &pitch);
+    if (err)
+	Sys_Error("%s: unable to lock texture (%s)", __func__, SDL_GetError());
+    src = vid.buffer + y * vid.width + subrect.x;
+    while (height--) {
+	for (i = 0; i < width; i++)
+	    dst[i] = d_8to24table[src[i]];
+	dst += pitch / sizeof(*dst);
+	src += vid.width;
+    }
+    SDL_UnlockTexture(texture);
+
+    err = SDL_RenderCopy(renderer, texture, NULL, NULL);
     if (err)
 	Sys_Error("%s: unable to render texture (%s)", __func__, SDL_GetError());
     SDL_RenderPresent(renderer);
-    SDL_FreeSurface(surf);
-    SDL_DestroyTexture(tex);
 }
 
 void
@@ -473,17 +537,6 @@ VID_LockBuffer(void)
 void
 VID_UnlockBuffer(void)
 {
-}
-
-SDL_Palette* makePaddedPalette_(const byte* input, SDL_Palette* palette){
-   SDL_Palette* pal_ = !!palette ? palette : SDL_AllocPalette(256);
-   byte* curColor = (byte*)input;
-   const byte* end = &input[767];
-   for(int i=0; curColor <= end; curColor+=3){
-      pal_->colors[i++] = (SDL_Color){
-	      .r=curColor[0],.g=curColor[1],.b=curColor[2]};
-   }
-   return pal_;
 }
 
 #ifndef _WIN32
