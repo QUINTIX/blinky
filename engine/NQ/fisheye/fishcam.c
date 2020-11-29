@@ -12,10 +12,11 @@ static void copyCameraDirections(CameraFacade *cameraFacade);
 
 SDL_Surface* rendererFacade(
 		CameraFacade *cameraFacade,
-		SDL_Surface *plateBackBuffer){
+		SDL_Surface *plateBackBuffer){ 
 	
 	SDL_Surface* local;
 
+//callee is responsible for destroying this SDL_Surface when the viewport dimensions change
 	if(!!!plateBackBuffer){
 		local = getSurfaceFromVidBuffer();
 	} else {
@@ -27,6 +28,8 @@ SDL_Surface* rendererFacade(
 	}
 
 	copyCameraDirections(cameraFacade);
+	R_PushDlights();
+	R_RenderView();
 
 	return local;
 }

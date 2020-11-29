@@ -2,6 +2,9 @@
 #include "fishlens.h"
 #include <SDL2/SDL_surface.h>
 
+/* meant to externalize part of render_plate in fisheye.c
+ * currently is untested, dead code */
+
 typedef struct _basisVectors {
 	vec3_u forward;
 	vec3_u right;
