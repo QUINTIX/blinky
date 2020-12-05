@@ -16,7 +16,7 @@ local f = h-c -- center to face
 -- compute fov
 local fovr = 2*atan(r/f)
 local fovd = fovr * 180 / pi + 1 -- +1 to get rid of the hole in the center
-print(fovd)
+print(string.format("%.2f",fovd))
 
 local y = e - e*e/(r+e)
 local z =-f + h*e/(r+e)

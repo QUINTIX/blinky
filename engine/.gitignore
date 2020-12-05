@@ -1,3 +1,12 @@
 
 bin
 build
+*.o
+*.out
+
+*.png
+
+#for ignoring code quality metrics output
+cov.info
+*.htm*
+*.css
