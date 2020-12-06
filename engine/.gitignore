@@ -5,6 +5,7 @@ build*
 *.out
 
 *.png
+!icons/*.png
 
 #for ignoring code quality metrics output
 cov.info

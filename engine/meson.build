@@ -8,8 +8,24 @@ TYR_VERSION_TIME = run_command(
     'git', 'show', '-s', '--pretty=\'%at\''
 ).stdout().strip().strip('\'').to_int()
 
-iconSrcDir = './icons/tyrquake-1024x1024.png'
-iconDestDir = './include/tyrquake_icon_128.h'
+fs = import('fs')
+
+iconSrc = './icons/tyrquake-1024x1024.png'
+iconDest = './include/tyrquake_icon_128.h'
+
+if not fs.exists(iconDest)
+    message('generating', iconDest)
+	
+    r_convert = run_command('convert', 
+        iconSrc,
+        '-resize', '128x128',
+        '-define', 'h:format-rgba', '-depth', '8',
+        '-size', '128x128',
+        iconDest)
+    if r_convert.returncode() != 0
+        error('unable to convert image')
+    endif
+endif
 
 includes = include_directories(
         './include',
