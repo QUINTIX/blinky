@@ -13,6 +13,7 @@ fs = import('fs')
 iconSrc = './icons/tyrquake-1024x1024.png'
 iconDest = './include/tyrquake_icon_128.h'
 
+#requires imageMagik; not sure how to externalize that dependency
 if not fs.exists(iconDest)
     message('generating', iconDest)
 	
@@ -261,29 +262,16 @@ endif
 
 sys_src = sys_src_dict[build_machine.system()]
 
-if 'windows' == build_machine.system() 
-        executable('blinky',
-                NQ_src, common_src, common_nonasm_src,
-                sys_src, sw_src, SDL_src, fisheye_src,
-                include_directories : includes,
-                dependencies : client_deps,
-                install : true,
-                c_args : [
-                '-DNQ_HACK',
-                '-DTYR_VERSION=@0@'.format(TYR_VERSION_NUM),
-                '-DTYR_VERSION_TIME=@0@LL'.format(TYR_VERSION_TIME)
-                ],
-                win_subsystem: 'windows')
-else
-        executable('blinky',
-                NQ_src, common_src, common_nonasm_src,
-                sys_src, sw_src, SDL_src, fisheye_src,
-                include_directories : includes,
-                dependencies : client_deps,
-                install : true,
-                c_args : [
-                '-DNQ_HACK',
-                '-DTYR_VERSION=@0@'.format(TYR_VERSION_NUM),
-                '-DTYR_VERSION_TIME=@0@LL'.format(TYR_VERSION_TIME)
-                ])
-endif
+
+executable('blinky',
+    NQ_src, common_src, common_nonasm_src,
+    sys_src, sw_src, SDL_src, fisheye_src,
+    include_directories : includes,
+    dependencies : client_deps,
+    install : true,
+    c_args : [
+        '-DNQ_HACK',
+        '-DTYR_VERSION=@0@'.format(TYR_VERSION_NUM),
+        '-DTYR_VERSION_TIME=@0@LL'.format(TYR_VERSION_TIME)
+    ])
+
