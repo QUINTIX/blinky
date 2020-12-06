@@ -2,11 +2,6 @@ project('blinky', 'c',
   version : '0.67',
   default_options : ['warning_level=3'])
 
-TYR_GIT = run_command(
-    'git', 'describe', '--dirty'
-).stdout().strip()
-message('git reported version is @0@'.format(TYR_GIT))
-
 TYR_RELEASE = 'v@0@'.format(meson.project_version())
 TYR_VERSION_NUM = meson.project_version()
 TYR_VERSION_TIME = run_command(
@@ -34,6 +29,7 @@ win_src = files(
 linux_src = files(
         'common/cd_linux.c',
         'common/sys_unix.c',
+        'NQ/net_none.c'
 )
 
 bsd_src = files(
@@ -224,20 +220,54 @@ fisheye_src = files(
 
 # test_deps = [dependency('cmocka')]
 
+cc = meson.get_compiler('c')
+m_dep = cc.find_library('m', required: false)
+
 client_deps = [
-        dependency('SDL2', required: true),
-        dependency('SDL2_image', required: true),
-        dependency('lua', required: true)
+        dependency('sdl2', fallback : ['sdl2', 'sdl2_dep']),
+        dependency('sdl2_image', fallback : ['sdl2_image', 'sdl2_image_dep']),
+        dependency('lua', fallback : ['lua', 'lua_dep']),
+        m_dep
 ]
 
-executable('blinky',
-        NQ_src, common_src, common_nonasm_src,
-        mac64_src, sw_src, SDL_src, fisheye_src,
-        include_directories : includes,
-        dependencies : client_deps,
-        install : true,
-        c_args : [
-            '-DNQ_HACK',
-            '-DTYR_VERSION=@0@'.format(TYR_VERSION_NUM),
-            '-DTYR_VERSION_TIME=@0@LL'.format(TYR_VERSION_TIME)
-        ])
+sys_src_dict = {
+        'darwin' : mac64_src,
+        'freebsd' : bsd_src,
+        'openbsd' : bsd_src,
+        'cygwin' : linux_src,
+        'linux' : linux_src,
+        'windows' : win_src
+}
+
+if build_machine.system() not in sys_src_dict
+        error('cannot build on @0@'.format(build_machine.system()))
+endif
+
+sys_src = sys_src_dict[build_machine.system()]
+
+if 'windows' == build_machine.system() 
+        executable('blinky',
+                NQ_src, common_src, common_nonasm_src,
+                sys_src, sw_src, SDL_src, fisheye_src,
+                include_directories : includes,
+                dependencies : client_deps,
+                install : true,
+                c_args : [
+                '-DNQ_HACK',
+                '-DTYR_VERSION=@0@'.format(TYR_VERSION_NUM),
+                '-DTYR_VERSION_TIME=@0@LL'.format(TYR_VERSION_TIME)
+                ],
+                win_subsystem: 'windows')
+else
+        executable('blinky',
+                NQ_src, common_src, common_nonasm_src,
+                sys_src, sw_src, SDL_src, fisheye_src,
+                include_directories : includes,
+                dependencies : client_deps,
+                install : true,
+                c_args : [
+                '-DNQ_HACK',
+                '-DTYR_VERSION=@0@'.format(TYR_VERSION_NUM),
+                '-DTYR_VERSION_TIME=@0@LL'.format(TYR_VERSION_TIME)
+                ])
+endif

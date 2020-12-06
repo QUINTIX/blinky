@@ -10,3 +10,7 @@ build*
 cov.info
 *.htm*
 *.css
+
+#meson junk
+subprojects/**
+!subprojects/*.wrap

@@ -1,0 +1,6 @@
+.vs
+vc_proj
+bin
+build*
+CppProperties.json
+**.vscode**
