@@ -174,12 +174,15 @@ NQ_src = files(
         'NQ/net_dgrm.c',
         'NQ/net_loop.c',
         'NQ/net_main.c',
-        'NQ/net_udp.c',
         'NQ/sbar.c',
         'NQ/sv_main.c',
         'NQ/sv_user.c',
         'NQ/view.c'
 )
+
+# NQ_net_unix_src = files(
+#        'NQ/net_udp.c'
+# )
 
 common_nonasm_src = files(
         'common/mathlib.c',
@@ -256,11 +259,19 @@ sys_src_dict = {
         'windows' : win_src
 }
 
-if build_machine.system() not in sys_src_dict
+this_sys = build_machine.system()
+
+if this_sys not in sys_src_dict
         error('cannot build on @0@'.format(build_machine.system()))
 endif
 
-sys_src = sys_src_dict[build_machine.system()]
+sys_src = sys_src_dict[this_sys]
+
+if this_sys == 'windows'
+        winmm_dep = cc.find_library('winmm')
+        winsock_dep = cc.find_library('ws2_32')
+        client_deps += [winmm_dep, winsock_dep]
+endif
 
 
 executable('blinky',
