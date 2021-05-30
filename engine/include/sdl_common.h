@@ -18,13 +18,14 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
+#include "qtypes.h"
 #include "SDL.h"
 
 extern SDL_Window *sdl_window;
 extern SDL_PixelFormat *sdl_desktop_format;
 
 typedef struct {
-    typeof(SDL_PIXELFORMAT_UNKNOWN) format;
+	SDL_PixelFormatEnum format;
 } qvidformat_t;
 
 /*

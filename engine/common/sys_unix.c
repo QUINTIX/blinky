@@ -313,6 +313,8 @@ Sys_MakeCodeWriteable(void *start_addr, void *end_addr)
  * ===========================================================================
  */
 
+#ifndef TESTING
+
 int
 main(int argc, const char *argv[])
 {
@@ -430,3 +432,5 @@ main(int argc, const char *argv[])
 
     return 0;
 }
+
+#endif

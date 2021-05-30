@@ -180,10 +180,6 @@ NQ_src = files(
         'NQ/view.c'
 )
 
-# NQ_net_unix_src = files(
-#        'NQ/net_udp.c'
-# )
-
 common_nonasm_src = files(
         'common/mathlib.c',
         'common/snd_mix.c'
@@ -238,7 +234,9 @@ fisheye_src = files(
         'NQ/fisheye/imageutil.c'
 )
 
-# test_deps = [dependency('cmocka')]
+NQ_net_unix_src = files(
+       'NQ/net_udp.c'
+)
 
 cc = meson.get_compiler('c')
 m_dep = cc.find_library('m', required: false)
@@ -271,8 +269,10 @@ if this_sys == 'windows'
         winmm_dep = cc.find_library('winmm')
         winsock_dep = cc.find_library('ws2_32')
         client_deps += [winmm_dep, winsock_dep]
+else
+	sys_src = NQ_net_unix_src + sys_src
+	message('adding NQ_net_unix_src')
 endif
-
 
 executable('blinky',
     NQ_src, common_src, common_nonasm_src,
@@ -284,5 +284,37 @@ executable('blinky',
         '-DNQ_HACK',
         '-DTYR_VERSION=@0@'.format(TYR_VERSION_NUM),
         '-DTYR_VERSION_TIME=@0@LL'.format(TYR_VERSION_TIME)
-    ])
+    ]
+)
 
+test_deps = client_deps + [
+        dependency('cmocka', fallback : ['cmocka', 'cmocka_dep'])
+]
+
+cam_test_src = files(
+        'NQ/tests/quake_swrTest.c',
+        'NQ/fisheye/fishcam.c'
+)
+
+int_test_exe = executable(
+    'fish_swrTest',
+    NQ_src, common_src, common_nonasm_src,
+    sys_src, sw_src, SDL_src,
+    cam_test_src,
+    include_directories : include_directories(
+        './include',
+        './NQ',
+        './NQ/fisheye/',
+        './NQ/tests'
+    ),
+    dependencies: test_deps,
+    c_args : [
+        '-DNQ_HACK',
+        '-DTYR_VERSION=@0@'.format(TYR_VERSION_NUM),
+        '-DTYR_VERSION_TIME=@0@LL'.format(TYR_VERSION_TIME),
+        '-DTESTING',
+        '-DQBASEDIR="@0@"'.format(meson.source_root() / '/Users/patrickquin/qk/content/')
+    ]
+)
+
+test('integration tests', int_test_exe)

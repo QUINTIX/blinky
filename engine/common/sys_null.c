@@ -135,6 +135,7 @@ Sys_LowFPPrecision(void)
 }
 
 //=============================================================================
+#ifndef TESTING
 
 void
 main(int argc, char **argv)
@@ -158,3 +159,5 @@ main(int argc, char **argv)
 
     return 0;
 }
+
+#endif

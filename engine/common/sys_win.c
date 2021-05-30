@@ -647,6 +647,7 @@ const char *argv[MAX_NUM_ARGVS];
 static const char *empty_string = "";
 HWND hwnd_dialog;
 
+#ifndef TESTING
 
 int WINAPI
 WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine,
@@ -839,6 +840,8 @@ WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine,
     /* return success of application */
     return TRUE;
 }
+
+#endif
 
 /*
 ================
