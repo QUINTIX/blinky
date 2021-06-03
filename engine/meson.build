@@ -16,7 +16,6 @@ iconDest = './include/tyrquake_icon_128.h'
 #requires imageMagik; not sure how to externalize that dependency
 if not fs.exists(iconDest)
     message('generating', iconDest)
-	
     r_convert = run_command('convert', 
         iconSrc,
         '-resize', '128x128',
@@ -270,8 +269,8 @@ if this_sys == 'windows'
         winsock_dep = cc.find_library('ws2_32')
         client_deps += [winmm_dep, winsock_dep]
 else
-	sys_src = NQ_net_unix_src + sys_src
-	message('adding NQ_net_unix_src')
+  sys_src = NQ_net_unix_src + sys_src
+  message('adding NQ_net_unix_src')
 endif
 
 executable('blinky',
@@ -313,8 +312,31 @@ int_test_exe = executable(
         '-DTYR_VERSION=@0@'.format(TYR_VERSION_NUM),
         '-DTYR_VERSION_TIME=@0@LL'.format(TYR_VERSION_TIME),
         '-DTESTING',
-        '-DQBASEDIR="@0@"'.format(meson.source_root() / '/Users/patrickquin/qk/content/')
+        '-DQBASEDIR="@0@"'.format(meson.source_root() / './game/')
+    ]
+)
+
+fisheye_test_src = files(
+        'NQ/fisheye/fishzoom.c',
+        'NQ/fisheye/fishlens.c',
+        'NQ/tests/fish_dependentTests.c',
+        'common/mathlib.c'
+)
+
+unit_test_exe = executable(
+  'fish_unitTest',
+  fisheye_test_src,
+  include_directories : include_directories(
+        './include/',
+        './NQ/',
+        './NQ/fisheye/'
+    ),
+    dependencies: test_deps,
+    c_args : [
+      '-DNQ_HACK',
+      '-DTESTING'
     ]
 )
 
 test('integration tests', int_test_exe)
+test('unit tests', unit_test_exe)
