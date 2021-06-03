@@ -7,21 +7,22 @@ jobs:
       - name: prepare environment
         uses: msys2/setup-msys2@v2
         with:
-        update: true
-        install: >-
-          base-devel
-          git
-          mingw-w64-x86_64-gcc
-          mingw-w64-x86_64-pkg-config 
-          mingw-w64-x86_64-python
-          mingw-w64-x86_64-ninja
-          mingw-w64-x86_64-meson
-          mingw-w64-x86_64-SDL2
-          mingw-w64-x86_64-SDL2_image
-          mingw-w64-x86_64-lua
-          mingw-w64-x86_64-cmocka
+          update: true
+          install: >-
+            base-devel
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-pkg-config 
+            mingw-w64-x86_64-python
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-SDL2
+            mingw-w64-x86_64-SDL2_image
+            mingw-w64-x86_64-lua
+            mingw-w64-x86_64-cmocka
       - name: checkout repo
         uses: actions/checkout@v2
+      - name: show changes
         run: git describe --dirty
       - name: build on windows
         run: |
@@ -31,8 +32,11 @@ jobs:
           ninja
       - name: archive binaries
         uses: actions/upload-artifact@v2
-        with: name built
-        path: engine/build/**
+        with: 
+          name: built
+          path: engine/build/**
+          retention-days: 60
       - name: Download Build Artifact
         uses: actions/download-artifact@v2.0.9
-        with: built
+        with:
+          name: built
