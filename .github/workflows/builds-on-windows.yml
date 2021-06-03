@@ -22,9 +22,8 @@ jobs:
             mingw-w64-x86_64-cmocka
       - name: checkout repo
         uses: actions/checkout@v2
-      - name: show changes
-        run: git describe --dirty
       - name: build on windows
+        shell: msys2 {0}
         run: |
           cd engine
           meson build
