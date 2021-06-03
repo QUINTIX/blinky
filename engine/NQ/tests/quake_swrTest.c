@@ -8,7 +8,6 @@
 #include <stdarg.h>
 #include <float.h>
 
-#include <SDL2/sdl.h>
 #include "qtypes.h"
 #include "quakedef.h"
 #include "sys.h"
