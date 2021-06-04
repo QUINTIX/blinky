@@ -11,6 +11,7 @@ jobs:
           install: >-
             base-devel
             git
+            lcov
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-pkg-config 
             mingw-w64-x86_64-python
@@ -29,6 +30,9 @@ jobs:
           meson build
           cd build
           ninja
+          cp /mingw64/bin/lua*.dll .
+          cp /mingw64/bin/SDL2.dll .
+          cp /mingw64/bin/SDL2_image.dll .
       - name: archive binaries
         uses: actions/upload-artifact@v2
         with: 
@@ -39,3 +43,7 @@ jobs:
         uses: actions/download-artifact@v2.0.9
         with:
           name: built
+      - name: execute subset of tests
+        shell: msys2 {0}
+        run: |
+          engine/build/fish_unitTest.exe
