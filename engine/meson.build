@@ -299,6 +299,7 @@ int_test_exe = executable(
     'fish_swrTest',
     NQ_src, common_src, common_nonasm_src,
     sys_src, sw_src, SDL_src,
+#   dummythicc_src, sw_src, nonSDL_dummy,
     cam_test_src,
     include_directories : include_directories(
         './include',
@@ -312,7 +313,7 @@ int_test_exe = executable(
         '-DTYR_VERSION=@0@'.format(TYR_VERSION_NUM),
         '-DTYR_VERSION_TIME=@0@LL'.format(TYR_VERSION_TIME),
         '-DTESTING',
-        '-DQBASEDIR="@0@"'.format(meson.source_root() / './game/')
+        '-DQBASEDIR="@0@"'.format(meson.source_root() / '../game/')
     ]
 )
 

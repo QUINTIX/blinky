@@ -20,6 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // in_null.c -- for systems without a mouse
 
 #include "quakedef.h"
+#include "client.h"
 
 void
 IN_Init(void)
