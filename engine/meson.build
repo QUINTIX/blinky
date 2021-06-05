@@ -264,6 +264,20 @@ endif
 
 sys_src = sys_src_dict[this_sys]
 
+blinky_args = [
+        '-DNQ_HACK',
+        '-DTYR_VERSION=@0@'.format(TYR_VERSION_NUM),
+        '-DTYR_VERSION_TIME=@0@LL'.format(TYR_VERSION_TIME)
+]
+
+int_test_args = [
+        '-DNQ_HACK',
+        '-DTYR_VERSION=@0@'.format(TYR_VERSION_NUM),
+        '-DTYR_VERSION_TIME=@0@LL'.format(TYR_VERSION_TIME),
+        '-DTESTING',
+        '-DQBASEDIR="@0@"'.format(meson.source_root() / '../game/')
+]
+
 if this_sys == 'windows'
         winmm_dep = cc.find_library('winmm')
         winsock_dep = cc.find_library('ws2_32')
@@ -279,11 +293,7 @@ executable('blinky',
     include_directories : includes,
     dependencies : client_deps,
     install : true,
-    c_args : [
-        '-DNQ_HACK',
-        '-DTYR_VERSION=@0@'.format(TYR_VERSION_NUM),
-        '-DTYR_VERSION_TIME=@0@LL'.format(TYR_VERSION_TIME)
-    ]
+    c_args : blinky_args
 )
 
 test_deps = client_deps + [
@@ -307,14 +317,8 @@ int_test_exe = executable(
         './NQ/fisheye/',
         './NQ/tests'
     ),
-    dependencies: test_deps,
-    c_args : [
-        '-DNQ_HACK',
-        '-DTYR_VERSION=@0@'.format(TYR_VERSION_NUM),
-        '-DTYR_VERSION_TIME=@0@LL'.format(TYR_VERSION_TIME),
-        '-DTESTING',
-        '-DQBASEDIR="@0@"'.format(meson.source_root() / '../game/')
-    ]
+    dependencies: test_deps + client_deps,
+    c_args : int_test_args
 )
 
 fisheye_test_src = files(

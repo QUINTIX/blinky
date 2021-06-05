@@ -27,7 +27,7 @@ jobs:
         shell: msys2 {0}
         run: |
           cd engine
-          meson build
+          meson build -Dwarning_level=1 --buildtype=release
           cd build
           ninja
           cp /mingw64/bin/lua*.dll .
