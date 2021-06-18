@@ -23,6 +23,11 @@ jobs:
             mingw-w64-x86_64-cmocka
       - name: checkout repo
         uses: actions/checkout@v2
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v2.0.10
+        with: #todo: make builds incremental
+          name: built
+          path: ~/download/blinky
       - name: build on windows
         shell: msys2 {0}
         run: |
@@ -44,8 +49,7 @@ jobs:
           cp -v /mingw64/bin/libjbig-0.dll engine/build
           cp -v /mingw64/bin/libdeflate.dll engine/build
           cp -v /mingw64/bin/libzstd.dll engine/build
-          mkdir engine/build/lua-scripts
-          cp -vR game/lua-scripts engine/build/lua-scripts
+          cp -vR game/lua-scripts engine/build/
           cp -v game/id1/config.cfg engine/build/suggested-config.cfg
       - name: archive binaries
         uses: actions/upload-artifact@v2
@@ -53,10 +57,6 @@ jobs:
           name: built
           path: engine/build/**
           retention-days: 60
-      - name: Download Build Artifact
-        uses: actions/download-artifact@v2.0.9
-        with:
-          name: built
       - name: execute subset of tests
         shell: msys2 {0}
         run: |
