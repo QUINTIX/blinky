@@ -30,9 +30,24 @@ jobs:
           meson build -Dwarning_level=1 --buildtype=release
           cd build
           ninja
+      - name: gather external files
+        shell: mysys2 {0}
+        run: | # copied from list generated from running `ldd blinky.exe`
           cp /mingw64/bin/lua*.dll .
           cp /mingw64/bin/SDL2.dll .
           cp /mingw64/bin/SDL2_image.dll .
+          cp /mingw64/bin/libpng16-16.dll .
+          cp /mingw64/bin/libwebp-7.dll .
+          cp /mingw64/bin/libjpeg-8.dll .
+          cp /mingw64/bin/libtiff-5.dll .
+          cp /mingw64/bin/zlib.dll .
+          cp /mingw64/bin/liblzma-5.dll .
+          cp /mingw64/bin/libjbig-0.dll .
+          cp /mingw64/bin/libdeflate.dll .
+          cp /mingw64/bin/libzstd.dll .
+          cp ../game/config.cfg suggested-config.cfg
+          mkdir lua-scripts
+          cp -vR ../game/lua-scripts lua-scripts
       - name: archive binaries
         uses: actions/upload-artifact@v2
         with: 
