@@ -45,7 +45,7 @@ jobs:
           cp -v /mingw64/bin/libdeflate.dll engine/build
           cp -v /mingw64/bin/libzstd.dll engine/build
           mkdir engine/build/lua-scripts
-          cp -vR game/lua-scripts enigine/build/lua-scripts
+          cp -vR game/lua-scripts engine/build/lua-scripts
           cp -v game/id1/config.cfg engine/build/suggested-config.cfg
       - name: archive binaries
         uses: actions/upload-artifact@v2
