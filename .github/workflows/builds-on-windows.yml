@@ -33,20 +33,20 @@ jobs:
       - name: gather external files
         shell: msys2 {0}
         run: | # copied from list generated from running `ldd blinky.exe`
-          cp -v /mingw64/bin/lua*.dll .
-          cp -v /mingw64/bin/SDL2.dll .
-          cp -v /mingw64/bin/SDL2_image.dll .
-          cp -v /mingw64/bin/libpng16-16.dll .
-          cp -v /mingw64/bin/libwebp-7.dll .
-          cp -v /mingw64/bin/libjpeg-8.dll .
-          cp -v /mingw64/bin/libtiff-5.dll .
-          cp -v /mingw64/bin/liblzma-5.dll .
-          cp -v /mingw64/bin/libjbig-0.dll .
-          cp -v /mingw64/bin/libdeflate.dll .
-          cp -v /mingw64/bin/libzstd.dll .
-          mkdir lua-scripts
-          cp -vR ../../game/lua-scripts lua-scripts
-          cp -v ../../game/id1/config.cfg suggested-config.cfg
+          cp -v /mingw64/bin/lua*.dll engine/build
+          cp -v /mingw64/bin/SDL2.dll engine/build
+          cp -v /mingw64/bin/SDL2_image.dll engine/build
+          cp -v /mingw64/bin/libpng16-16.dll engine/build
+          cp -v /mingw64/bin/libwebp-7.dll engine/build
+          cp -v /mingw64/bin/libjpeg-8.dll engine/build
+          cp -v /mingw64/bin/libtiff-5.dll engine/build
+          cp -v /mingw64/bin/liblzma-5.dll engine/build
+          cp -v /mingw64/bin/libjbig-0.dll engine/build
+          cp -v /mingw64/bin/libdeflate.dll engine/build
+          cp -v /mingw64/bin/libzstd.dll engine/build
+          mkdir engine/build/lua-scripts
+          cp -vR game/lua-scripts enigine/build/lua-scripts
+          cp -v game/id1/config.cfg engine/build/suggested-config.cfg
       - name: archive binaries
         uses: actions/upload-artifact@v2
         with: 
