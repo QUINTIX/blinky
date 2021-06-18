@@ -44,9 +44,9 @@ jobs:
           cp -v /mingw64/bin/libjbig-0.dll .
           cp -v /mingw64/bin/libdeflate.dll .
           cp -v /mingw64/bin/libzstd.dll .
-          cp -v ../game/config.cfg suggested-config.cfg
           mkdir lua-scripts
           cp -vR ../game/lua-scripts lua-scripts
+          cp -v ../game/id1/config.cfg suggested-config.cfg
       - name: archive binaries
         uses: actions/upload-artifact@v2
         with: 
