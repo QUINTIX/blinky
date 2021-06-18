@@ -31,7 +31,7 @@ jobs:
           cd build
           ninja
       - name: gather external files
-        shell: mysys2 {0}
+        shell: msys2 {0}
         run: | # copied from list generated from running `ldd blinky.exe`
           cp /mingw64/bin/lua*.dll .
           cp /mingw64/bin/SDL2.dll .
