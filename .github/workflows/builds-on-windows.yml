@@ -23,11 +23,6 @@ jobs:
             mingw-w64-x86_64-cmocka
       - name: checkout repo
         uses: actions/checkout@v2
-      - name: Download Build Artifact
-        uses: actions/download-artifact@v2.0.10
-        with: #todo: make builds incremental
-          name: built
-          path: ~/download/blinky
       - name: build on windows
         shell: msys2 {0}
         run: |
@@ -57,6 +52,13 @@ jobs:
           name: built
           path: engine/build/**
           retention-days: 60
+      - name: download build artifacts
+        uses: actions/download-artifact@v2.0.10
+        with: #todo: make builds incremental
+          name: built
+          path: ~/downloads/blinky
+        run: |
+          ls -R ~/downloads/blinky
       - name: execute subset of tests
         shell: msys2 {0}
         run: |
