@@ -57,6 +57,7 @@ jobs:
         with: #todo: make builds incremental
           name: built
           path: ~/downloads/blinky
+      - name: list build artifacts 
         run: |
           ls -R ~/downloads/blinky
       - name: execute subset of tests
