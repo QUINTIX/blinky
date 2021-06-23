@@ -4,6 +4,7 @@
   - gcc
   - lua
   - sdl2
+  - meson
 1. Install msys
 1. Add mingw/bin and msys/bin to system path
 1. Open msys/bin/msys to open command line
@@ -105,6 +106,12 @@ So these are the wonky, unautomated steps to build the mac bundle:
 
   ```sh
   sudo apt-get install libxxf86dga-dev
+  ```
+
+- Install python and pip3 (for meson)
+
+  ```
+  sudo apt-get python3 pip3
   ```
 
 ```sh

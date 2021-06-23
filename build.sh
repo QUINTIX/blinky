@@ -22,17 +22,42 @@ else
   EXT=.exe
 fi
 
+type python3;
+if [[ $? -ne 0 ]]; then
+	echo "python3 not found; python is required for the meson build system"
+	exit 1;
+fi
+
+type meson;
+if [[ $? -ne 0 ]]; then
+	echo "meson not found; attempting to install..."
+	type pip3;
+	if [[ $? -ne 0 ]]; then
+		echo "pip3 not found; unable to automatically install meson"
+		exit 1;
+	fi;
+	pip3 install --user meson;
+	path=$path;'~/.local/bin';
+fi;
+
 echo
 echo "Building engine..."
 pushd engine
-make bin/tyr-quake$EXT
+	if [[ -d "build" ]]; then
+		meson --reconfigure build
+	else
+		meson build
+	fi;
+	pushd build
+		ninja
+	popd
 popd
 
 echo
 echo "Copying engine to game directory..."
 mkdir -p game
 rm -f game/blinky$EXT
-cp engine/bin/tyr-quake$EXT game/blinky$EXT
+cp engine/build/blinky$EXT game/blinky$EXT
 
 echo
 echo -e "\033[32mSuccessfully built!\033[0m"
