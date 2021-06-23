@@ -4,6 +4,8 @@
   - gcc
   - lua
   - sdl2
+  - sdl2image
+  - cmocka
   - meson
 1. Install msys
 1. Add mingw/bin and msys/bin to system path
@@ -17,19 +19,35 @@
 ## Mac OS X
 
 - Install [Command Line Tools for XCode](https://developer.apple.com/downloads/) (you need an apple developer account, free)
-- Install Lua 5.2
+- Install [homebrew](https://brew.sh)
 
   ```sh
-  curl -R -O http://www.lua.org/ftp/lua-5.2.0.tar.gz
-  tar zxf lua-5.2.0.tar.gz
-  cd lua-5.2.0
-  make macosx test
-  sudo make install
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  ```
+
+- Install Lua
+
+  ```sh
+  brew install lua
   ```
 
 - Install SDL2
-  - [Download](https://www.libsdl.org/release/SDL2-2.0.3.dmg)
-  - Copy SDL2.Framework to /Library/Frameworks/
+  
+  ```sh
+  brew install sdl2 sdl2_image
+  ```
+
+- Install cmocka
+
+  ```sh
+  brew install cmocka
+  ```
+
+- Install meson
+
+  ```sh
+  brew install meson
+  ```
 
 ```sh
 ./build.sh
@@ -37,6 +55,8 @@
 ```
 
 ### Creating the Mac Bundle
+
+[**edit:** _This is broken. Makefile has not been updated for this to still work, and the makefile is in the process of being deprecated. Furthermore, macOS Big Sur does not support 32bit. At all._ ]
 
 I don't actually understand how Mac builds work currently.  I am piggiebacking
 off TyrQuake's Makefile "bundles" task with some workarounds to compensate for
@@ -99,7 +119,7 @@ So these are the wonky, unautomated steps to build the mac bundle:
 - Install SDL 2
 
   ```sh
-  sudo apt-get install libsdl2-dev
+  sudo apt-get install libsdl2-dev libsdl2-image-dev
   ```
 
 - Install Xxf86dga
@@ -108,10 +128,10 @@ So these are the wonky, unautomated steps to build the mac bundle:
   sudo apt-get install libxxf86dga-dev
   ```
 
-- Install python and pip3 (for meson)
+- Install python and pip3 (for meson) and cmocka
 
   ```
-  sudo apt-get python3 pip3
+  sudo apt-get python3 pip3 cmocka
   ```
 
 ```sh
