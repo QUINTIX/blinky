@@ -21,6 +21,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "quakedef.h"
 #include "d_local.h"
+#include "host.h"
+#include "common.h"
 
 viddef_t vid;			// global video state
 
@@ -35,17 +37,17 @@ unsigned short d_8to16table[256];
 unsigned d_8to24table[256];
 
 void
-VID_SetPalette(unsigned char *palette)
+VID_SetPalette(const byte *palette)
 {
 }
 
 void
-VID_ShiftPalette(unsigned char *palette)
+VID_ShiftPalette(const byte *palette)
 {
 }
 
 void
-VID_Init(unsigned char *palette)
+VID_Init(const byte *palette)
 {
     vid.maxwarpwidth = vid.width = vid.conwidth = BASEWIDTH;
     vid.maxwarpheight = vid.height = vid.conheight = BASEHEIGHT;

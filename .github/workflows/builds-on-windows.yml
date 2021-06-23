@@ -1,0 +1,67 @@
+name: builds-on-windows
+on: [push]
+jobs:
+  buildable:
+    runs-on: windows-latest
+    steps:
+      - name: prepare environment
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: >-
+            base-devel
+            git
+            lcov
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-pkg-config 
+            mingw-w64-x86_64-python
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-SDL2
+            mingw-w64-x86_64-SDL2_image
+            mingw-w64-x86_64-lua
+            mingw-w64-x86_64-cmocka
+      - name: checkout repo
+        uses: actions/checkout@v2
+      - name: build on windows
+        shell: msys2 {0}
+        run: |
+          cd engine
+          meson build -Dwarning_level=1 --buildtype=release
+          cd build
+          ninja
+      - name: gather external files
+        shell: msys2 {0}
+        run: | # copied from list generated from running `ldd blinky.exe`
+          cp -v /mingw64/bin/lua*.dll engine/build
+          cp -v /mingw64/bin/SDL2.dll engine/build
+          cp -v /mingw64/bin/SDL2_image.dll engine/build
+          cp -v /mingw64/bin/libpng16-16.dll engine/build
+          cp -v /mingw64/bin/libwebp-7.dll engine/build
+          cp -v /mingw64/bin/libjpeg-8.dll engine/build
+          cp -v /mingw64/bin/libtiff-5.dll engine/build
+          cp -v /mingw64/bin/liblzma-5.dll engine/build
+          cp -v /mingw64/bin/libjbig-0.dll engine/build
+          cp -v /mingw64/bin/libdeflate.dll engine/build
+          cp -v /mingw64/bin/libzstd.dll engine/build
+          cp -v /mingw64/bin/zlib1.dll engine/build
+          cp -vR game/lua-scripts engine/build/
+          cp -v game/id1/config.cfg engine/build/suggested-config.cfg
+      - name: archive binaries
+        uses: actions/upload-artifact@v2
+        with: 
+          name: built
+          path: engine/build/**
+          retention-days: 60
+      - name: download build artifacts
+        uses: actions/download-artifact@v2.0.10
+        with: #todo: make builds incremental
+          name: built
+          path: ~/downloads/blinky
+      - name: list build artifacts 
+        run: |
+          ls -R ~/downloads/blinky
+      - name: execute subset of tests
+        shell: msys2 {0}
+        run: |
+          engine/build/fish_unitTest.exe
